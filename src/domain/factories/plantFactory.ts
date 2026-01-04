@@ -61,6 +61,12 @@ export function getActiveFlowPlant(): IFlowPlant {
     return activeFlowPlant;
 }
 
+
+export function getStartLinesCount(): number {
+    const flowPlant = getActiveFlowPlant();
+    const startStations = flowPlant.stationstartProduction;
+    return startStations?.length || 1;
+}
 /**
  * Define uma nova configuração ativa da planta.
  */

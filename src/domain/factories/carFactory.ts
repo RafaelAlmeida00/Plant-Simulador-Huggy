@@ -1,4 +1,5 @@
 import { Car } from "../models/Car";
+import { getActiveFlowPlant, getStartLinesCount } from "./plantFactory";
 
 export class CarFactory {
     // Estado interno da Factory para garantir que a sequência incremente corretamente
@@ -14,6 +15,12 @@ export class CarFactory {
     private static readonly idChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     private static readonly idCharsLen = 36;
 
+    // Configuração do mix planejado
+    private static readonly MIX_ITEMS_PER_LINE = 10; // 10 carros/peças por linha antes de trocar modelo
+
+    // Cache para evitar recalcular o número de linhas de nascimento a cada chamada
+    private cachedStartLinesCount: number | null = null;
+
     /**
      * Cria um carro com dados aleatórios baseados nas regras de negócio
      * @param currentSimulatorTime O tempo atual do relógio do simulador (não Date.now())
@@ -25,7 +32,7 @@ export class CarFactory {
         return new Car({
             id: this.generateId(),
             sequenceNumber: this.currentSequence,
-            model: this.getRandomModel(),
+            model: this.getPlannedModel(),
             color: this.getRandomColor(),
             createdAt: currentSimulatorTime,
             hasDefect: Math.random() * 100 < dphu,
@@ -49,7 +56,7 @@ export class CarFactory {
         return new Car({
             id: this.generatePartId(partType),
             sequenceNumber: this.currentSequence,
-            model: this.getRandomModel(),  // Peça herda modelo aleatório
+            model: this.getPlannedModel(),  // Peça herda modelo aleatório
             color: [],  // Peças não têm cor
             createdAt: currentSimulatorTime,
             hasDefect: false,  // Peças não têm defeito (simplificação)
@@ -97,15 +104,42 @@ export class CarFactory {
         return `PART-${partType}-${++this.partIdCounter}`;
     }
 
+    public getPlannedModel(): string {
+        if (this.cachedStartLinesCount == null) {
+            this.cachedStartLinesCount = getStartLinesCount();
+        }
+        const numStartLines = this.cachedStartLinesCount;
+
+        // Tamanho do bloco por modelo = N linhas × 10 itens por linha
+        const blockSize = numStartLines * CarFactory.MIX_ITEMS_PER_LINE;
+
+        // Tamanho de um ciclo completo (todos os modelos)
+        const cycleSize = blockSize * CarFactory.modelsLen;
+
+        // Posição dentro do ciclo atual (0-indexed)
+        // Usa (currentSequence - 1) porque currentSequence já foi incrementado antes da chamada
+        const positionInCycle = ((this.currentSequence - 1) % cycleSize);
+
+        // Qual bloco de modelo estamos (0, 1, 2, ...)
+        const modelIndex = Math.floor(positionInCycle / blockSize);
+
+        return CarFactory.models[modelIndex];
+    }
+
+    /**
+     * @deprecated Use getPlannedModel() para produção com mix planejado.
+     * Mantido para compatibilidade caso seja necessário modelo aleatório em cenários específicos.
+     */
     public getRandomModel(): string {
-        return CarFactory.models[(Math.random() * CarFactory.modelsLen) | 0];
+        // Agora usa o mix planejado ao invés de aleatório
+        return this.getPlannedModel();
     }
 
     private getRandomColor(): string[] {
         const colors = CarFactory.colors;
         const len = CarFactory.colorsLen;
         const color1 = colors[(Math.random() * len) | 0];
-        
+
         if (Math.random() >= 0.15) {
             return [color1];
         }
