@@ -1,0 +1,861 @@
+openapi: 3.0.0
+info:
+  title: Plant Simulador API
+  version: 1.0.0
+  description: |
+    API para simulação e monitoramento de uma planta industrial, incluindo eventos, buffers, paradas, snapshots e saúde do sistema.
+servers:
+  - url: http://localhost:3000
+paths:
+  /api/events:
+    get:
+      summary: Lista todos os eventos
+      parameters:
+        - in: query
+          name: car_id
+          schema:
+            type: string
+        - in: query
+          name: shop
+          schema:
+            type: string
+        - in: query
+          name: line
+          schema:
+            type: string
+        - in: query
+          name: station
+          schema:
+            type: string
+        - in: query
+          name: event_type
+          schema:
+            type: string
+        - in: query
+          name: start_time
+          schema:
+            type: integer
+        - in: query
+          name: end_time
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de eventos
+    post:
+      summary: Cria um novo evento
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CarEvent'
+      responses:
+        '201':
+          description: Evento criado
+  /api/events/{id}:
+    get:
+      summary: Busca evento por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Evento encontrado
+        '404':
+          description: Evento não encontrado
+    put:
+      summary: Atualiza evento por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CarEvent'
+      responses:
+        '200':
+          description: Evento atualizado
+        '404':
+          description: Evento não encontrado
+    delete:
+      summary: Remove evento por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Evento removido
+        '404':
+          description: Evento não encontrado
+  /api/stops:
+    get:
+      summary: Lista todas as paradas
+      parameters:
+        - in: query
+          name: stop_id
+          schema:
+            type: string
+        - in: query
+          name: shop
+          schema:
+            type: string
+        - in: query
+          name: line
+          schema:
+            type: string
+        - in: query
+          name: station
+          schema:
+            type: string
+        - in: query
+          name: severity
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: type
+          schema:
+            type: string
+        - in: query
+          name: start_time
+          schema:
+            type: integer
+        - in: query
+          name: end_time
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de paradas
+    post:
+      summary: Cria uma nova parada
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StopEvent'
+      responses:
+        '201':
+          description: Parada criada
+  /api/stops/{id}:
+    get:
+      summary: Busca parada por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Parada encontrada
+        '404':
+          description: Parada não encontrada
+    put:
+      summary: Atualiza parada por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StopEvent'
+      responses:
+        '200':
+          description: Parada atualizada
+        '404':
+          description: Parada não encontrada
+    delete:
+      summary: Remove parada por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Parada removida
+        '404':
+          description: Parada não encontrada
+  /api/buffers:
+    get:
+      summary: Lista todos os estados de buffer
+      parameters:
+        - in: query
+          name: buffer_id
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: type
+          schema:
+            type: string
+        - in: query
+          name: from_location
+          schema:
+            type: string
+        - in: query
+          name: to_location
+          schema:
+            type: string
+        - in: query
+          name: start_time
+          schema:
+            type: integer
+        - in: query
+          name: end_time
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de estados de buffer
+    post:
+      summary: Cria um novo estado de buffer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BufferState'
+      responses:
+        '201':
+          description: Estado de buffer criado
+  /api/buffers/{id}:
+    get:
+      summary: Busca estado de buffer por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Estado de buffer encontrado
+        '404':
+          description: Estado de buffer não encontrado
+    put:
+      summary: Atualiza estado de buffer por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BufferState'
+      responses:
+        '200':
+          description: Estado de buffer atualizado
+        '404':
+          description: Estado de buffer não encontrado
+    delete:
+      summary: Remove estado de buffer por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Estado de buffer removido
+        '404':
+          description: Estado de buffer não encontrado
+  /api/plantstate:
+    get:
+      summary: Lista todos os snapshots da planta
+      parameters:
+        - in: query
+          name: start_time
+          schema:
+            type: integer
+        - in: query
+          name: end_time
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de snapshots
+    post:
+      summary: Cria um novo snapshot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlantSnapshot'
+      responses:
+        '201':
+          description: Snapshot criado
+  /api/plantstate/{id}:
+    get:
+      summary: Busca snapshot por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Snapshot encontrado
+        '404':
+          description: Snapshot não encontrado
+    put:
+      summary: Atualiza snapshot por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlantSnapshot'
+      responses:
+        '200':
+          description: Snapshot atualizado
+        '404':
+          description: Snapshot não encontrado
+    delete:
+      summary: Remove snapshot por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Snapshot removido
+        '404':
+          description: Snapshot não encontrado
+  /api/health:
+    get:
+      summary: Verifica saúde do sistema
+      responses:
+        '200':
+          description: Status de saúde
+  /api/health/detailed:
+    get:
+      summary: Verifica saúde detalhada do sistema
+      responses:
+        '200':
+          description: Status detalhado
+  /api/oee:
+    get:
+      summary: Lista todos os registros de OEE
+      parameters:
+        - in: query
+          name: date
+          schema:
+            type: string
+          description: Data no formato YYYY-MM-DD
+        - in: query
+          name: shop
+          schema:
+            type: string
+        - in: query
+          name: line
+          schema:
+            type: string
+        - in: query
+          name: start_time
+          schema:
+            type: integer
+        - in: query
+          name: end_time
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de registros OEE
+    post:
+      summary: Cria um novo registro de OEE
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OEE'
+      responses:
+        '201':
+          description: Registro OEE criado
+  /api/oee/{id}:
+    get:
+      summary: Busca registro OEE por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Registro OEE encontrado
+        '404':
+          description: Registro OEE não encontrado
+    put:
+      summary: Atualiza registro OEE por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OEE'
+      responses:
+        '200':
+          description: Registro OEE atualizado
+        '404':
+          description: Registro OEE não encontrado
+    delete:
+      summary: Remove registro OEE por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Registro OEE removido
+        '404':
+          description: Registro OEE não encontrado
+  /api/mttr-mtbf:
+    get:
+      summary: Lista todos os registros de MTTR/MTBF
+      parameters:
+        - in: query
+          name: date
+          schema:
+            type: string
+          description: Data no formato YYYY-MM-DD
+        - in: query
+          name: shop
+          schema:
+            type: string
+        - in: query
+          name: line
+          schema:
+            type: string
+        - in: query
+          name: station
+          schema:
+            type: string
+        - in: query
+          name: start_time
+          schema:
+            type: integer
+        - in: query
+          name: end_time
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de registros MTTR/MTBF
+    post:
+      summary: Cria um novo registro de MTTR/MTBF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MTTRMTBF'
+      responses:
+        '201':
+          description: Registro MTTR/MTBF criado
+  /api/mttr-mtbf/{id}:
+    get:
+      summary: Busca registro MTTR/MTBF por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Registro MTTR/MTBF encontrado
+        '404':
+          description: Registro MTTR/MTBF não encontrado
+    put:
+      summary: Atualiza registro MTTR/MTBF por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MTTRMTBF'
+      responses:
+        '200':
+          description: Registro MTTR/MTBF atualizado
+        '404':
+          description: Registro MTTR/MTBF não encontrado
+    delete:
+      summary: Remove registro MTTR/MTBF por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Registro MTTR/MTBF removido
+        '404':
+          description: Registro MTTR/MTBF não encontrado
+  /api/config:
+    get:
+      summary: Lista todas as configurações da planta
+      responses:
+        '200':
+          description: Lista de configurações
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConfigPlant'
+                  count:
+                    type: integer
+    post:
+      summary: Cria uma nova configuração da planta
+      description: Se isDefault for true, atualiza a configuração default atual para false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigPlantCreate'
+      responses:
+        '201':
+          description: Configuração criada
+        '400':
+          description: Campos obrigatórios faltando ou JSON inválido
+        '409':
+          description: Já existe uma configuração com este nome
+  /api/config/default:
+    get:
+      summary: Retorna a configuração padrão da planta
+      responses:
+        '200':
+          description: Configuração padrão encontrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ConfigPlant'
+        '404':
+          description: Nenhuma configuração padrão encontrada
+  /api/config/name/{name}:
+    get:
+      summary: Busca configuração por nome
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Configuração encontrada
+        '404':
+          description: Configuração não encontrada
+  /api/config/{id}:
+    get:
+      summary: Busca configuração por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Configuração encontrada
+        '404':
+          description: Configuração não encontrada
+    put:
+      summary: Atualiza configuração por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigPlantUpdate'
+      responses:
+        '200':
+          description: Configuração atualizada
+        '404':
+          description: Configuração não encontrada
+        '409':
+          description: Já existe uma configuração com este nome
+    delete:
+      summary: Remove configuração por ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Configuração removida
+        '404':
+          description: Configuração não encontrada
+  /api/config/{id}/set-default:
+    put:
+      summary: Define uma configuração como padrão
+      description: Remove o status de padrão da configuração atual e define a configuração especificada como padrão
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Configuração definida como padrão
+        '404':
+          description: Configuração não encontrada
+components:
+  schemas:
+    CarEvent:
+      type: object
+      properties:
+        car_id:
+          type: string
+        event_type:
+          type: string
+        shop:
+          type: string
+        line:
+          type: string
+        station:
+          type: string
+        timestamp:
+          type: integer
+    StopEvent:
+      type: object
+      properties:
+        stop_id:
+          type: string
+        shop:
+          type: string
+        line:
+          type: string
+        station:
+          type: string
+        start_time:
+          type: integer
+        end_time:
+          type: integer
+        status:
+          type: string
+        severity:
+          type: string
+        type:
+          type: string
+    BufferState:
+      type: object
+      properties:
+        buffer_id:
+          type: string
+        from_location:
+          type: string
+        to_location:
+          type: string
+        capacity:
+          type: integer
+        current_count:
+          type: integer
+        status:
+          type: string
+        type:
+          type: string
+        timestamp:
+          type: integer
+    PlantSnapshot:
+      type: object
+      properties:
+        timestamp:
+          type: integer
+        total_stations:
+          type: integer
+        total_occupied:
+          type: integer
+        total_free:
+          type: integer
+        total_stopped:
+          type: integer
+        snapshot_data:
+          type: object
+    OEE:
+      type: object
+      properties:
+        id:
+          type: integer
+        date:
+          type: string
+          description: Data no formato YYYY-MM-DD
+        shop:
+          type: string
+        line:
+          type: string
+          description: Nome da linha ou ALL para agregado do shop
+        production_time:
+          type: number
+          description: Tempo de produção em minutos
+        cars_production:
+          type: integer
+          description: Quantidade de carros produzidos
+        takt_time:
+          type: number
+          description: Takt time em minutos
+        diff_time:
+          type: number
+          description: Diferença em minutos (production_time - takt_time * cars_production)
+        oee:
+          type: number
+          description: OEE em percentual (0-100)
+        created_at:
+          type: integer
+    MTTRMTBF:
+      type: object
+      properties:
+        id:
+          type: integer
+        date:
+          type: string
+          description: Data no formato YYYY-MM-DD
+        shop:
+          type: string
+        line:
+          type: string
+          description: Nome da linha ou ALL para agregado
+        station:
+          type: string
+          description: Nome da station ou ALL para agregado
+        mttr:
+          type: number
+          description: Mean Time To Repair em minutos
+        mtbf:
+          type: number
+          description: Mean Time Between Failures em minutos
+        created_at:
+          type: integer
+    ConfigPlant:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ID único da configuração (UUID)
+        name:
+          type: string
+          description: Nome único da configuração
+        config:
+          type: string
+          description: JSON string contendo a configuração da planta no formato IFlowPlant
+        isDefault:
+          type: boolean
+          description: Indica se é a configuração padrão
+        created_at:
+          type: integer
+          description: Timestamp de criação
+    ConfigPlantCreate:
+      type: object
+      required:
+        - name
+        - config
+      properties:
+        id:
+          type: string
+          description: ID opcional (UUID será gerado se não fornecido)
+        name:
+          type: string
+          description: Nome único da configuração
+        config:
+          oneOf:
+            - type: string
+              description: JSON string da configuração
+            - type: object
+              description: Objeto JSON da configuração (será convertido para string)
+        isDefault:
+          type: boolean
+          description: Se true, esta configuração será definida como padrão
+          default: false
+    ConfigPlantUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Novo nome da configuração
+        config:
+          oneOf:
+            - type: string
+              description: JSON string da configuração
+            - type: object
+              description: Objeto JSON da configuração (será convertido para string)
+        isDefault:
+          type: boolean
+          description: Se true, esta configuração será definida como padrão

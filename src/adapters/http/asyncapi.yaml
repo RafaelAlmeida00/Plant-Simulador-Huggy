@@ -1,0 +1,305 @@
+asyncapi: 3.0.0
+info:
+  title: Plant Simulador WebSocket API
+  version: 1.0.0
+  description: >
+    API de comunicação em tempo real via WebSocket (socket.io) para o
+    Plant-Simulador.
+
+    Permite o front end receber atualizações instantâneas de eventos, estados,
+    notificações e enviar comandos de simulação.
+servers:
+  production:
+    host: 'localhost:3000'
+    protocol: socket.io
+    description: WebSocket server para comunicação em tempo real
+channels:
+  plantUpdate:
+    address: plantUpdate
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/PlantUpdate'
+    description: 'Atualizações do estado global da planta (buffers, paradas, produção, etc)'
+  eventCreated:
+    address: eventCreated
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/EventCreated'
+    description: Notificação de novo evento criado
+  stopStarted:
+    address: stopStarted
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/StopStarted'
+    description: Notificação de início de parada
+  stopEnded:
+    address: stopEnded
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/StopEnded'
+    description: Notificação de término de parada
+  stops:
+    address: stops
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/StopsStateDetailed'
+    description: Estado completo das paradas incluindo planejadas e aleatórias
+  oee:
+    address: oee
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/OEEUpdate'
+    description: Atualizações dinâmicas de OEE em tempo real
+  command:
+    address: command
+    messages:
+      publish.message:
+        $ref: '#/components/messages/Command'
+    description: Canal para envio de comandos do front end para o simulador
+operations:
+  plantUpdate.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/plantUpdate'
+    summary: Receber atualizações do estado da planta em tempo real
+    messages:
+      - $ref: '#/channels/plantUpdate/messages/subscribe.message'
+  eventCreated.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/eventCreated'
+    summary: Receber notificação quando um novo evento é criado
+    messages:
+      - $ref: '#/channels/eventCreated/messages/subscribe.message'
+  stopStarted.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/stopStarted'
+    summary: Receber notificação quando uma parada inicia
+    messages:
+      - $ref: '#/channels/stopStarted/messages/subscribe.message'
+  stopEnded.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/stopEnded'
+    summary: Receber notificação quando uma parada termina
+    messages:
+      - $ref: '#/channels/stopEnded/messages/subscribe.message'
+  stops.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/stops'
+    summary: Receber estado completo das paradas incluindo planejadas e aleatórias
+    messages:
+      - $ref: '#/channels/stops/messages/subscribe.message'
+  oee.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/oee'
+    summary: Receber atualizações dinâmicas de OEE quando há mudança na produção
+    messages:
+      - $ref: '#/channels/oee/messages/subscribe.message'
+  command.publish:
+    action: receive
+    channel:
+      $ref: '#/channels/command'
+    summary: 'Enviar comandos de simulação (ex: start, pause, reset)'
+    messages:
+      - $ref: '#/channels/command/messages/publish.message'
+components:
+  messages:
+    PlantUpdate:
+      name: PlantUpdate
+      title: Atualização do Estado da Planta
+      payload:
+        type: object
+        properties:
+          timestamp:
+            type: integer
+          snapshot:
+            type: object
+            description: Estado global da planta
+    EventCreated:
+      name: EventCreated
+      title: Novo Evento Criado
+      payload:
+        type: object
+        properties:
+          event:
+            type: object
+            description: Dados do evento criado
+    StopStarted:
+      name: StopStarted
+      title: Parada Iniciada
+      payload:
+        type: object
+        properties:
+          stop:
+            type: object
+            description: Dados da parada iniciada
+    StopEnded:
+      name: StopEnded
+      title: Parada Finalizada
+      payload:
+        type: object
+        properties:
+          stop:
+            type: object
+            description: Dados da parada finalizada
+    StopsStateDetailed:
+      name: StopsStateDetailed
+      title: Estado Detalhado das Paradas
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            enum:
+              - STOPS_STATE_DETAILED
+          data:
+            type: object
+            properties:
+              activeStops:
+                type: array
+                description: Lista de paradas ativas na simulação
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    shop:
+                      type: string
+                    line:
+                      type: string
+                    station:
+                      type: string
+                    reason:
+                      type: string
+                    severity:
+                      type: string
+                    type:
+                      type: string
+                    category:
+                      type: string
+                    status:
+                      type: string
+                    startTime:
+                      type: integer
+                    endTime:
+                      type: integer
+                    durationMs:
+                      type: integer
+              plannedStops:
+                type: array
+                description: Lista de paradas planejadas configuradas no flowPlant
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    type:
+                      type: string
+                    reason:
+                      type: string
+                    affectsShops:
+                      type: array
+                      items:
+                        type: string
+                    startTime:
+                      type: string
+                    durationMn:
+                      type: integer
+                    daysOfWeek:
+                      type: array
+                      items:
+                        type: integer
+              randomStops:
+                type: array
+                description: Lista de paradas aleatórias geradas no início do turno
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    shop:
+                      type: string
+                    line:
+                      type: string
+                    station:
+                      type: string
+                    reason:
+                      type: string
+                    severity:
+                      type: string
+                    type:
+                      type: string
+                    category:
+                      type: string
+                    status:
+                      type: string
+                    startTime:
+                      type: integer
+                    endTime:
+                      type: integer
+                    durationMs:
+                      type: integer
+          timestamp:
+            type: integer
+    OEEUpdate:
+      name: OEEUpdate
+      title: Atualização de OEE em Tempo Real
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            enum:
+              - OEE_UPDATE
+          data:
+            type: array
+            description: Lista de OEE por linha
+            items:
+              type: object
+              properties:
+                date:
+                  type: string
+                  description: Data no formato YYYY-MM-DD
+                shop:
+                  type: string
+                line:
+                  type: string
+                productionTime:
+                  type: number
+                  description: Tempo de produção em minutos
+                carsProduction:
+                  type: integer
+                  description: Quantidade de carros produzidos
+                taktTime:
+                  type: number
+                  description: Takt time em minutos
+                diffTime:
+                  type: number
+                  description: Diferença em minutos
+                oee:
+                  type: number
+                  description: OEE em percentual (0-100)
+          timestamp:
+            type: integer
+    Command:
+      name: Command
+      title: Comando de Simulação
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            enum:
+              - start
+              - pause
+              - reset
+              - custom
+          payload:
+            type: object
+            description: Parâmetros do comando
