@@ -1,4 +1,4 @@
-# Dockerfile para rodar o simulador no Render
+# Dockerfile ajustado para Hugging Face Spaces
 
 # ---- Build stage ----
 FROM node:20-bookworm-slim AS builder
@@ -19,27 +19,31 @@ FROM node:20-bookworm-slim AS runner
 
 WORKDIR /app
 
-# Set timezone to Brazil (UTC-3)
+# Configura Timezone
 ENV TZ=America/Sao_Paulo
 RUN apt-get update && apt-get install -y --no-install-recommends tzdata && rm -rf /var/lib/apt/lists/*
 
-# Render injeta PORT em runtime; default permanece 3000
-ENV PORT=3000
+# --- MUDANÇA CRÍTICA AQUI ---
+# Hugging Face Spaces EXIGE a porta 7860
+ENV PORT=7860
 
-# Mantém sqlite fora de src/ (ver DatabaseConfig.ts)
 ENV NODE_ENV=production
 ENV DATABASE_TYPE=sql
 
+# Copia arquivos do builder
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY package.json ./
 
-# Garante que os arquivos de documentação estejam disponíveis em produção
+# Documentação
 COPY src/adapters/http/swagger.yaml ./dist/adapters/http/swagger.yaml
 COPY src/adapters/http/asyncapi.yaml ./dist/adapters/http/asyncapi.yaml
 
-RUN mkdir -p simulation_output
+# Cria pasta de output e ajusta permissões (importante para SQLite no HF)
+RUN mkdir -p simulation_output && chmod 777 simulation_output
+RUN mkdir -p src/adapters/database/test && chmod -R 777 src/adapters/database
 
-EXPOSE 3000
+# --- MUDANÇA CRÍTICA AQUI ---
+EXPOSE 7860
 
 CMD ["node", "dist/index.js"]
