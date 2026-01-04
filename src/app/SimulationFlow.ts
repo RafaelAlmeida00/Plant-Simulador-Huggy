@@ -1676,6 +1676,20 @@ export class SimulationFlow {
 
         if (station.isStopped && station.stopReason === reason) return;
 
+        // BUG FIX: Não sobrescrever paradas reais (PLANNED/RANDOM) com paradas de flow.
+        // Paradas reais têm prioridade e seu ciclo de vida é gerenciado por updateScheduledStops.
+        // Sobrescrever causaria que removeStopFromStations não encontrasse a estação para limpar.
+        if (station.isStopped) {
+            const currentReason = station.stopReason || "";
+            const isCurrentFlowReason = SimulationFlow.FLOW_REASONS.includes(currentReason);
+            const isCurrentLackReason = currentReason.startsWith("LACK-");
+            
+            // Se a parada atual NÃO é de flow nem LACK, é uma parada real - não sobrescrever
+            if (!isCurrentFlowReason && !isCurrentLackReason) {
+                return;
+            }
+        }
+
         const category = type === "NEXT_FULL" ? "NEXT_FULL" : "PREV_EMPTY";
         const stop = new StopLine({
             id: ++SimulationFlow.stopIdCounter,

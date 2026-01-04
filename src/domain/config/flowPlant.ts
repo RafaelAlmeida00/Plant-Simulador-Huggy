@@ -97,7 +97,7 @@ export const FlowPlant: any = {
       affectsShops: ["Body"],
       startTime: "12:00",
       durationMn: 60,
-      daysOfWeek: [1, 2, 3, 4, 5, 6]
+      daysOfWeek: [0,1, 2, 3, 4, 5, 6]
     },
     {
       id: "LUNCH_PWT",
@@ -107,7 +107,7 @@ export const FlowPlant: any = {
       affectsShops: ["PWT"],
       startTime: "12:00",
       durationMn: 60,
-      daysOfWeek: [1, 2, 3, 4, 5, 6]
+      daysOfWeek: [0,1, 2, 3, 4, 5, 6]
     },
     {
       id: "LUNCH_PAINT",
@@ -117,7 +117,7 @@ export const FlowPlant: any = {
       affectsShops: ["Paint"],
       startTime: "11:30",
       durationMn: 60,
-      daysOfWeek: [1, 2, 3, 4, 5, 6]
+      daysOfWeek: [0,1, 2, 3, 4, 5, 6]
     },
     {
       id: "LUNCH_TRIM",
@@ -127,7 +127,7 @@ export const FlowPlant: any = {
       affectsShops: ["Trim"],
       startTime: "11:00",
       durationMn: 60,
-      daysOfWeek: [1, 2, 3, 4, 5, 6]
+      daysOfWeek: [0, 1, 2, 3, 4, 5, 6]
     },
     {
       id: "LUNCH_QUALIDADE",
@@ -137,7 +137,7 @@ export const FlowPlant: any = {
       affectsShops: ["Qualidade"],
       startTime: "11:00",
       durationMn: 60,
-      daysOfWeek: [1, 2, 3, 4, 5, 6]
+      daysOfWeek: [0, 1, 2, 3, 4, 5, 6]
     },
     {
       id: "MEETING_TUESDAY",
@@ -155,7 +155,7 @@ export const FlowPlant: any = {
       reason: "SHIFT_CHANGE",
       startTime: "16:48",
       durationMn: 12,
-      daysOfWeek: [1, 2, 3, 4, 5, 6]
+      daysOfWeek: [0, 1, 2, 3, 4, 5, 6]
     },
     {
       id: "NIGHT_STOP",
