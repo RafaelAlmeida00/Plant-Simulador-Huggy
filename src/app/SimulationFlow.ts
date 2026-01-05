@@ -760,7 +760,10 @@ export class SimulationFlow {
                                             startTime: this.event.simulatedTimestamp
                                         });
 
-                                        this.startFlowStop(station, lackReason, lackReason);
+                                        // Não inicia uma parada de flow para falta de peças na criação (s1).
+                                        // Marcar a station como "isStopped" aqui impede tentativas subsequentes
+                                        // de criação quando as peças chegarem. Em vez disso apenas registra
+                                        // a falta e notifica via callback; a criação será reavaliada a cada tick.
                                         this.log(`PART_SHORTAGE_CREATION: ${station.id} cannot create car - no ${requiredPart.partType} parts available`);
 
                                         this.callbacks?.onPartShortage?.(
@@ -838,7 +841,7 @@ export class SimulationFlow {
                                         startTime: this.event.simulatedTimestamp
                                     });
 
-                                    this.startFlowStop(station, lackReason, lackReason);
+                                    // Não iniciar parada de flow aqui também — apenas registrar e notificar.
                                     this.log(`PART_SHORTAGE_CREATION: ${station.id} no matching model across all required parts`);
                                 }
 
