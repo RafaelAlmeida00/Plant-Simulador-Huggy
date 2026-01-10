@@ -399,9 +399,9 @@ export class SimulationEventEmitter {
         socketServer.emitHealth(status);
     }
 
-    // Transforma OEEData (com objetos completos) em OEEDataEmit (com strings)
-    private transformOEEDataForEmit(oeeData: OEEData[]): OEEDataEmit[] {
-        return oeeData.map(data => ({
+    // Transforma um único OEEData em OEEDataEmit
+    private transformSingleOEEData(data: OEEData): OEEDataEmit {
+        return {
             date: data.date,
             shop: typeof data.shop === 'string' ? data.shop : (data.shop as IShop).name,
             line: typeof data.line === 'string' ? data.line : (data.line as ILine).id,
@@ -411,15 +411,27 @@ export class SimulationEventEmitter {
             diffTime: data.diffTime,
             oee: data.oee,
             jph: data.jph
-        }));
+        };
     }
 
-    // Emite OEE em tempo real via WebSocket
-    public emitOEE(oeeData: OEEData[]): void {
+    // Transforma OEEData (com objetos completos) em OEEDataEmit (com strings)
+    private transformOEEDataForEmit(oeeData: OEEData | OEEData[]): OEEDataEmit[] {
+        const dataArray = Array.isArray(oeeData) ? oeeData : [oeeData];
+        return dataArray.map(data => this.transformSingleOEEData(data));
+    }
+
+    // Emite OEE em tempo real via WebSocket (aceita um único OEEData ou array)
+    public emitOEE(oeeData: OEEData | OEEData[]): void {
         const now = Date.now();
 
-        // Sempre guarda o último OEE recebido
-        this.pendingOEEData = oeeData;
+        // Normaliza para array e acumula os dados pendentes
+        const newData = Array.isArray(oeeData) ? oeeData : [oeeData];
+
+        if (this.pendingOEEData) {
+            this.pendingOEEData.push(...newData);
+        } else {
+            this.pendingOEEData = [...newData];
+        }
 
         // Verifica se pode emitir (throttle)
         if (now - this.lastOEEEmit < this.flowPlantConfig.OEE_EMIT_INTERVAL) {

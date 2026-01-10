@@ -118,8 +118,8 @@ export async function StartSimulation() {
         onStopEndedStopLine: (stop) => {
             void simulationEventEmitter.emitStopEnded(stop);
         },
-        // OEE dinâmico - emite quando há mudança na produção
-        onOEECalculated: (oeeData: OEEData[]) => {
+        // OEE dinâmico - emite quando há mudança na produção (recebe um OEEData por vez)
+        onOEECalculated: (oeeData: OEEData) => {
             simulationEventEmitter.emitOEE(oeeData);
         },
         // OEE no fim do turno - persiste no banco
