@@ -292,3 +292,65 @@ ID PROBLEM RESOLVE 0++
    - Part lines and car lines should naturally synchronize because they use the same sequence-based model selection
 
 ---
+
+## ID 008 - Fallback to Rework for Missing Parts (Model Desync)
+1) 2026-01-10 | ~16:00:00
+2) **Main problem**: Cars getting stuck indefinitely at stations requiring parts when buffer is FULL but has no parts of the required model
+3) **Analysis**:
+   - Car ~40 (model P19) was getting stuck at MetalLine-s1
+   - Buffer Body-PARTS-COVER was FULL but had NO P19 parts
+   - Root cause: Model desynchronization between part lines and car lines
+   - Part lines use `getPlannedModel()` based on sequence
+   - Car lines with `requiredParts` use `approvedModels[0]` (first model with all parts available)
+   - Over time, the models diverge causing permanent blockage
+4) **Source Problem**: `src/app/SimulationFlow.ts` | `checkAndConsumeRequiredParts()` lines 295-321
+5) **Flow before**:
+   ```
+   Car at MetalLine-s1 (model P19)
+                          ↓
+   checkAndConsumeRequiredParts() checks buffer
+                          ↓
+   Buffer FULL but no P19 parts
+                          ↓
+   hasEnoughParts = false
+                          ↓
+   Car waits FOREVER (line blocked)
+   ```
+6) **Solution approach**:
+   - Added fallback mechanism in `checkAndConsumeRequiredParts()`
+   - When buffer is FULL AND has no parts of the required model:
+     1. Send car to shop's rework buffer
+     2. Mark car as defect with reason "MISSING_PARTS"
+     3. Set `inRework = true` and `reworkEnteredAt`
+     4. Car will be pulled from rework after `Rework_Time` (default 60min)
+   - This simulates "offline assembly" of the missing part
+   - Prevents line blockage while maintaining model integrity
+7) **Files edited**:
+   - `src/app/SimulationFlow.ts`:
+     - Lines 306-317: Modified `checkAndConsumeRequiredParts()` to call fallback
+     - Lines 347-367: Added `shouldSendToReworkForMissingParts()`
+     - Lines 369-425: Added `sendCarToReworkForMissingParts()`
+8) **New flow**:
+   ```
+   Car at MetalLine-s1 (model P19)
+                          ↓
+   checkAndConsumeRequiredParts() checks buffer
+                          ↓
+   Buffer FULL but no P19 parts
+                          ↓
+   shouldSendToReworkForMissingParts() → TRUE
+                          ↓
+   sendCarToReworkForMissingParts():
+     - car.hasDefect = true
+     - car.inRework = true
+     - car.reworkEnteredAt = timestamp
+     - Move to Body-REWORK buffer
+     - Station freed for next car
+                          ↓
+   After Rework_Time (60min):
+     - shouldPullFromRework() → TRUE
+     - Car pulled to Paint_In-s1
+     - Production continues
+   ```
+
+---

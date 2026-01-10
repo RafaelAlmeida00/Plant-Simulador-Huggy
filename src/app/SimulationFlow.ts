@@ -304,6 +304,14 @@ export class SimulationFlow {
         });
 
         if (!hasEnoughParts) {
+            // Fallback: Se buffer está cheio e não tem peças do modelo, envia para rework
+            const shouldFallback = this.shouldSendToReworkForMissingParts(gatheredBuffersData, car.model);
+            if (shouldFallback) {
+                const sent = this.sendCarToReworkForMissingParts(station, car);
+                if (sent) {
+                    return true; // Carro foi para rework, station liberada
+                }
+            }
             logger().debug(`Not enough parts for model ${car.model} at ${station.id}`);
             return false;
         }
@@ -334,6 +342,86 @@ export class SimulationFlow {
                 logger().debug(`Consumed part ${consumedPart.id} model ${model} from buffer ${data.bufferId}`);
             }
         });
+    }
+
+    private shouldSendToReworkForMissingParts(
+        buffersData: Array<{ bufferId: string, counts: Record<string, number> }>,
+        model: string
+    ): boolean {
+        // Verifica se algum buffer de peças está CHEIO e não tem o modelo necessário
+        for (const data of buffersData) {
+            const buffer = this.bufferFactory.getBuffer(data.bufferId);
+            if (!buffer) continue;
+
+            const hasModelPart = (data.counts[model] || 0) >= 1;
+            const isBufferFull = buffer.status === "FULL";
+
+            if (isBufferFull && !hasModelPart) {
+                logger().warn(
+                    `[FALLBACK] Buffer ${data.bufferId} is FULL but has no ${model} parts.`
+                );
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private sendCarToReworkForMissingParts(station: IStation, car: ICar): boolean {
+        const reworkBufferId = `${station.shop}-REWORK`;
+        const reworkBuffer = this.bufferFactory.getBuffer(reworkBufferId);
+
+        if (!reworkBuffer) {
+            logger().error(`[FALLBACK] Rework buffer not found: ${reworkBufferId}`);
+            return false;
+        }
+
+        if (reworkBuffer.status === "FULL") {
+            logger().warn(`[FALLBACK] Rework buffer ${reworkBufferId} is FULL, cannot send car ${car.id}`);
+            return false;
+        }
+
+        // Marcar carro como defeito (para passar pelo fluxo de rework)
+        car.hasDefect = true;
+        car.inRework = true;
+        car.reworkEnteredAt = this.event.simulatedTimestamp;
+        car.defects = car.defects || [];
+        car.defects.push(`MISSING_PARTS: ${car.model} at ${station.id}`);
+
+        // Atualizar trace e leadtime
+        this.updateCarTraceAndLeadtime(car, station);
+
+        // Adicionar ao buffer de rework
+        const success = this.bufferFactory.addCarToBuffer(reworkBuffer.id, car);
+        if (!success) {
+            logger().error(`[FALLBACK] Failed to add car ${car.id} to rework buffer ${reworkBuffer.id}`);
+            // Reverter estado
+            car.hasDefect = false;
+            car.inRework = false;
+            car.reworkEnteredAt = undefined;
+            car.defects.pop();
+            return false;
+        }
+
+        // Remover da station atual
+        this.plantFactory.removeCarFromStation(station.id);
+        this.endPropagationStopsAtStation(station);
+
+        logger().info(
+            `[FALLBACK] Car ${car.id} (${car.model}) → rework buffer ${reworkBuffer.id} due to missing parts at ${station.id}`
+        );
+
+        // Emitir evento de entrada no rework
+        if (this.callbacks?.onBufferIn) {
+            this.callbacks.onBufferIn(
+                car.id,
+                reworkBuffer.id,
+                { shop: station.shop, line: station.line },
+                station.id,
+                this.event.simulatedTimestamp
+            );
+        }
+
+        return true;
     }
 
     private getPartBufferData(line: ILine, partType: string): { bufferId: string, counts: Record<string, number> } | null {
