@@ -1,7 +1,7 @@
 // src/adapters/database/repositories/PlantSnapshotRepository.ts
 
+import { PlantSnapshot } from '../../../utils/shared';
 import { BaseRepository } from './BaseRepository';
-import { PlantSnapshot } from '../../../domain/services/PlantQueryService';
 
 export interface IPlantSnapshotRecord {
     id?: number;

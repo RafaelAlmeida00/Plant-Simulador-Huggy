@@ -1,33 +1,8 @@
-// src/domain/factories/MTTRMTBFFactory.ts
-
-import { IStopLine } from '../models/StopLine';
-import { ILine } from '../models/Line';
-
-export interface MTTRMTBFData {
-    date: string;
-    shop: string;
-    line: string;
-    station: string;
-    mttr: number;    // Mean Time To Repair (em minutos)
-    mtbf: number;    // Mean Time Between Failures (em minutos)
-}
-
-export interface MTTRMTBFCalculationInput {
-    shop: string;
-    line: string;
-    station: string;
-    productionTimeMinutes: number;
-    stops: IStopLine[];
-    simulatedTimestamp: number;
-}
+import { MTTRMTBFCalculationInput, MTTRMTBFData } from "../../utils/shared";
 
 export class MTTRMTBFFactory {
-    /**
-     * Calcula MTTR e MTBF para uma station específica
-     * MTTR = soma do tempo de paradas random failure / contagem de paradas random failure
-     * MTBF = productionTime / contagem de paradas random failure
-     */
-    public static calculateStationMTTRMTBF(input: MTTRMTBFCalculationInput): MTTRMTBFData {
+
+    public calculateStationMTTRMTBF(input: MTTRMTBFCalculationInput): MTTRMTBFData {
         const simDate = new Date(input.simulatedTimestamp);
         const dateStr = simDate.toISOString().split('T')[0];
 
@@ -54,7 +29,7 @@ export class MTTRMTBFFactory {
         // Soma o tempo total de todas as paradas random (em minutos)
         let totalStopTimeMs = 0;
         for (const stop of randomStops) {
-            totalStopTimeMs += stop.durationMs || 0;
+            totalStopTimeMs += stop.durationMs as number;
         }
         const totalStopTimeMinutes = totalStopTimeMs / 60000;
 
@@ -74,10 +49,8 @@ export class MTTRMTBFFactory {
         };
     }
 
-    /**
-     * Calcula MTTR/MTBF para uma linha (agregando todas as stations)
-     */
-    public static calculateLineMTTRMTBF(
+
+    public calculateLineMTTRMTBF(
         stationData: MTTRMTBFData[],
         productionTimeMinutes: number
     ): MTTRMTBFData | null {
@@ -121,10 +94,8 @@ export class MTTRMTBFFactory {
         };
     }
 
-    /**
-     * Calcula MTTR/MTBF para um shop (agregando todas as linhas)
-     */
-    public static calculateShopMTTRMTBF(lineData: MTTRMTBFData[]): MTTRMTBFData | null {
+
+    public calculateShopMTTRMTBF(lineData: MTTRMTBFData[]): MTTRMTBFData | null {
         if (lineData.length === 0) return null;
 
         const shop = lineData[0].shop;
@@ -161,31 +132,5 @@ export class MTTRMTBFFactory {
             mttr: Math.round((totalMttr / validLines) * 100) / 100,
             mtbf: Math.round((totalMtbf / validLines) * 100) / 100
         };
-    }
-
-    /**
-     * Coleta todas as paradas de uma linha para cálculo
-     */
-    public static getLineStops(stops: Map<string, IStopLine>, shop: string, line: string): IStopLine[] {
-        const result: IStopLine[] = [];
-        for (const [id, stop] of stops) {
-            if (stop.shop === shop && stop.line === line) {
-                result.push(stop);
-            }
-        }
-        return result;
-    }
-
-    /**
-     * Coleta todas as stations únicas de uma lista de paradas
-     */
-    public static getUniqueStations(stops: IStopLine[]): string[] {
-        const stationSet = new Set<string>();
-        for (const stop of stops) {
-            if (stop.station !== 'ALL') {
-                stationSet.add(stop.station);
-            }
-        }
-        return Array.from(stationSet);
     }
 }

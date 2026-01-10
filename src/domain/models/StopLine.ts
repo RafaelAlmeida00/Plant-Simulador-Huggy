@@ -1,31 +1,18 @@
+import { IStopLine, StopCategory, StopSeverity, StopStatus, StopType } from "../../utils/shared";
 
-export interface IStopLine {
-    id: number;
-    shop: string;
-    line: string;
-    station: string;
-    reason: string;
-    startTime: number;
-    endTime: number;
-    status: "PLANNED" | "IN_PROGRESS" | "COMPLETED";
-    severity?: "LOW" | "MEDIUM" | "HIGH" | "PLANNED" | null;
-    type: "MICRO" | "RANDOM_GENERATE" | "PROPAGATION" | "PLANNED";
-    category: "NEXT_FULL" | "PREV_EMPTY" | "PROCESS_QUALITY_FAILURE" | "PLANNED_STOP" | "SHIFT_CHANGE" | "NIGHT_STOP" | "LUNCH" | "MEETING";
-    durationMs?: number;
-}
 
-export class StopLine {
+export class StopLine implements IStopLine {
     public id: number;
     public shop: string;
     public line: string;
     public station: string;
     public reason: string;
     public startTime: number;
-    public endTime: number;
-    public status: "PLANNED" | "IN_PROGRESS" | "COMPLETED";
-    public severity?: "LOW" | "MEDIUM" | "HIGH" | "PLANNED" | null;
-    public type: "MICRO" | "RANDOM_GENERATE" | "PROPAGATION" | "PLANNED";
-    public category: "NEXT_FULL" | "PREV_EMPTY" | "PROCESS_QUALITY_FAILURE" | "PLANNED_STOP" | "SHIFT_CHANGE" | "NIGHT_STOP" | "LUNCH" | "MEETING";
+    public endTime: number | undefined;
+    public status: StopStatus;
+    public severity?: StopSeverity | null;
+    public type: StopType;
+    public category: StopCategory;
     public durationMs?: number;
 
     constructor(config: IStopLine) {

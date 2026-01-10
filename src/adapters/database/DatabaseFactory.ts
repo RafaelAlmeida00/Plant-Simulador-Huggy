@@ -4,6 +4,7 @@ import { IDatabase } from './IDatabase';
 import { DatabaseConfigFactory, IDatabaseConfig } from './DatabaseConfig';
 import { SQLiteDatabase } from './SQLiteDatabase';
 import { PostgresDatabase } from './PostgresDatabase';
+import { resetTestDatabase } from '../../utils/restartDB';
 
 export class DatabaseFactory {
     private static instance: IDatabase | null = null;
@@ -11,9 +12,11 @@ export class DatabaseFactory {
 
     public static async getDatabase(): Promise<IDatabase> {
         if (this.instance && this.instance.isConnected()) return this.instance;
-
-        // Se já existe uma inicialização em andamento, aguarda a mesma.
         if (this.initializing) return this.initializing;
+        const nodeEnv = process.env.NODE_ENV || 'test';
+        if (nodeEnv === 'test') {
+            await resetTestDatabase();
+        }
 
         this.initializing = (async () => {
             const config = DatabaseConfigFactory.getConfig();
@@ -26,7 +29,6 @@ export class DatabaseFactory {
         try {
             return await this.initializing;
         } finally {
-            // Libera a trava para futuras reconexões (em caso de disconnect/reset).
             this.initializing = null;
         }
     }
@@ -39,7 +41,7 @@ export class DatabaseFactory {
             case 'postgres':
             case 'aws':
             case 'gcp':
-            case 'local':
+            case 'postgres':
                 return new PostgresDatabase(config);
 
             default:

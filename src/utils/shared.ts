@@ -1,109 +1,17 @@
 // ============================================
-// TIPOS DE CONFIGURAÇÃO
+// ENUMS E CONSTANTES DE DOMÍNIO (Tipagem Forte)
 // ============================================
 
-import type { IShop } from "../domain/models/Shop";
-import type { IStopLine } from "../domain/models/StopLine";
-import type { ICar } from "../domain/models/Car";
-
-export interface TaktConfig {
-  jph: number;         // carros por hora
-  taktMs?: number;     // derived = 3600000 / jph (optional)
-  shiftStart: string;  // "07:00"
-  shiftEnd: string;    // "23:48"
-}
-
-// Configuração de turnos
-export interface ShiftConfig {
-  id: string;
-  start: string;       // "07:00"
-  end: string;         // "16:48"
-}
-
-// Paradas planejadas
-export interface PlannedStopConfig {
-  id: string;
-  name: string;        // nome da parada para logs
-  type: "LUNCH" | "MEETING" | "MAINTENANCE" | "SHIFT_CHANGE" | "NIGHT_STOP";
-  reason: StopReason;  // motivo para o StopDetector
-  affectsShops?: string[];    // quais shops afeta (undefined = todas)
-  affectsLines?: string[];    // quais linhas afeta (undefined = todas)
-  startTime: string;   // "12:00"
-  durationMn: number;  // duração em ms
-  daysOfWeek?: number[];  // 0=Dom, 1=Seg, 2=Ter... (undefined = todos)
-}
-
-// Routing / buffer types used in configs
-export interface BufferTarget { shop: string; line: string; station?: string; }
-export interface BufferConfig { capacity: number; }
-export interface RouteTo { shop: string; line: string; station?: string; }
-export interface Route { fromStation: string; to: RouteTo[]; }
-
-// Part Line configuration - required parts for consuming lines
-export interface RequiredPart {
-  partType: string;           // Type of part required (e.g., "DOOR", "ENGINE")
-  consumeStation?: string;    // Station that consumes this part (default: first station)
-}
-
-export interface StartProductionStation {
-  shop: string;
-  line: string;
-  station: string;
-}
-
-// Top-level system configuration
-export interface IFlowPlant {
-  shops: Record<string, IShop>;
-  oeeTargets?: Record<string, number>;
-  shifts?: ShiftConfig[];
-  plannedStops?: PlannedStopConfig[];
-  DPHU?: number;                    // Defeitos por 100 unidades
-  targetJPH?: number;               // JPH alvo padrão
-  typeSpeedFactor?: number;
-  Rework_Time?: number;         // Fator de velocidade da simulação (1 = tempo real, 10 = 10x mais rápido)
-
-  // Distribuição do takt entre stations (balanceamento)
-  // Frações relativas ao takt da linha. Ex.: 0.7 = 70% do takt.
-  stationTaktMinFraction?: number;
-  stationTaktMaxFraction?: number;
-  
-  // Lista de postos que recebem carros "novos" (injeção no fluxo)
-  // Por padrão, deve conter apenas o 1º posto da 1ª linha do fluxo.
-  stationstartProduction?: StartProductionStation[];
-}
-
-// ============================================
-// TIPOS DE DEFEITOS E RETRABALHO
-// ============================================
-
-export type DefectSeverity = "LOW" | "MEDIUM" | "HIGH";
-
-export interface DefectInfo {
-  id: string;
-  carId: string;
-  shop: string;
-  line: string;
-  station: string;
-  detectedAt: number;
-  severity: DefectSeverity;
-  description: string;
-  estimatedRepairMs: number;
-}
-
-export interface ReworkEntry {
-  car: any;  // Car object
-  defect: DefectInfo;
-  enteredAt: number;
-  estimatedCompleteAt: number;
-  completedAt?: number;
-  priority: number;  // maior = mais prioritário
-}
-
-// ============================================
-// TIPOS DE PARADAS
-// ============================================
-
-export type StopCategory = "MICRO" | "CAUSE" | "PROPAGATION";
+export type StopStatus = "PLANNED" | "IN_PROGRESS" | "COMPLETED";
+export type StopSeverity = "LOW" | "MEDIUM" | "HIGH" | "PLANNED";
+export type StopType = "MICRO" | "RANDOM_GENERATE" | "PROPAGATION" | "PLANNED";
+export type BufferType = "BUFFER" | "REWORK_BUFFER" | "PART_BUFFER";
+export type BufferStatus = "EMPTY" | "AVAILABLE" | "FULL";
+export type ClockState = "stopped" | "running" | "paused";
+export type LogEventType =
+  | "MOVE" | "STOP_START" | "STOP_END" | "CAR_CREATED" | "CAR_COMPLETED"
+  | "DEFECT_DETECTED" | "REWORK_START" | "REWORK_END" | "SHIFT_START"
+  | "SHIFT_END" | "BUFFER_FULL" | "BUFFER_EMPTY";
 
 export type StopReason =
   | "NEXT_FULL"           // próximo posto/buffer cheio
@@ -114,38 +22,219 @@ export type StopReason =
   | "NIGHT_STOP"          // parada noturna
   | "LUNCH"               // almoço
   | "MEETING"             // reunião
-  | "FALTA_PORTAS"        // Door Line não entregou
-  | "FALTA_MATERIAL"      // material não chegou
+  | "PROCESS_STOP"        // parada de processo genérica
+  | "FALTA_PORTAS"        // Falta de peças específicas
+  | "FALTA_MATERIAL"      // material geral
   | "BLOCKED_DOWNSTREAM"  // propagação: downstream cheio
   | "STARVED_UPSTREAM"    // propagação: upstream vazio
-  | "DEFECT_REWORK";      // carro desviado para retrabalho
+  | "DEFECT_REWORK"       // carro desviado para retrabalho
+  | "PROCESS_QUALITY_FAILURE";
 
-export interface StopRecord {
-  id: string;
-  category: StopCategory;
-  reason: StopReason;
-  severity: DefectSeverity;
+export type StopCategory = "MICRO" | "CAUSE" | "PROCESS_QUALITY_FAILURE" | "PROPAGATION" | "PLANNED_STOP" | "SHIFT_CHANGE" | "NIGHT_STOP" | "LUNCH" | "MEETING";
+
+// ============================================
+// INTERFACES BASE E LOCALIZAÇÃO
+// ============================================
+
+export interface ShopLineLocation {
   shop: string;
   line: string;
+}
+
+export interface StationLocation extends ShopLineLocation {
   station: string;
-  startTs: number;
-  endTs?: number;
+  shop: string;
+  line: string;
+}
+
+// ============================================
+// MODELOS DE DADOS (Interfaces de Estado)
+// ============================================
+
+  export interface ICarTrace {
+    shop?: string;
+    line?: string;
+    station?: string;
+    enter?: number;
+    leave?: number;
+  }
+
+export interface ICarShopLeadtime {
+  shop?: string;
+  line?: string;
+  enteredAt?: number;
+  exitedAt?: number;
+  leadtimeMs?: number;
+}
+
+export interface ICar {
+  id: string;
+  sequenceNumber: number;
+  model: string;
+  color: string[];
+  createdAt: number;
+  completedAt?: number;
+  metadata?: Record<string, any>;
+  trace: ICarTrace[];
+  hasDefect: boolean;
+  defects?: string[];
+  inRework: boolean;
+  reworkEnteredAt?: number;
+  reworkCompletedAt?: number;
+  shopLeadtimes: ICarShopLeadtime[];
+  totalLeadtimeMs?: number;
+  isPart: boolean;
+  partName?: string;
+}
+
+export interface IStopLine extends StationLocation {
+  id: number;
+  reason: string | StopReason;
+  startTime: number;
+  endTime?: number;
+  status: StopStatus;
+  severity?: StopSeverity | null;
+  type: StopType;
+  category: StopCategory;
   durationMs?: number;
-  propagatedFrom?: string;  // ID da parada que causou esta
-  propagatedTo?: string[];  // IDs das paradas causadas por esta
-  carsImpacted?: number;
+  station: string;
+}
+
+export interface IStation extends StationLocation {
+  id: string;
+  index: number;
+  taktMn: number;
+  taktSg: number;
+  isFirstStation?: boolean;
+  isLastStation?: boolean;
+  occupied: boolean;
+  currentCar: ICar | null;
+  isStopped: boolean;
+  stopReason?: string;
+  startStop: number;
+  finishStop: number;
+  stopId?: string;
+  isFirstCar: boolean;
+}
+
+export interface IBuffer {
+  id: string;
+  betweenShopOrLine: "shop" | "line";
+  to: string;
+  from: string;
+  capacity: number;
+  currentCount: number;
+  cars: any[];
+  type: BufferType;
+  status?: BufferStatus;
+}
+
+export interface IShop {
+  name: string;
+  lines: Map<string, ILine> | Record<string, any>;
+  bufferCapacity?: number;
+  reworkBuffer?: number;
 }
 
 
-export interface LogEvent {
+export interface ILine {
+  id: string;
+  shop: string;
+  line: string;
+  stations: IStation[];
+  taktMn: number;
+  isFeederLine?: boolean;
+  feedsToLine?: string;
+  feedsToStation?: string;
+  MTTR?: number;
+  MTBF?: number;
+  productionTimeMinutes?: number;
+  // Part Line fields
+  partType?: string;                    // If set, this line produces parts of this type
+  requiredParts?: RequiredPart[];       // Parts required by this line to operate
+  partConsumptionStation?: string;      // Station that consumes parts (default: first station)
+  // CreateWith - only create parts when specified line/station has output
+  createWith?: { line: string; station: string };  // Sync part creation with another line's output
+  buffers: RequiredBuffer[];
+  routes: RequiredRoutes[];
+  takt: TaktConfig;
+}
+
+// ============================================
+// CONFIGURAÇÕES DO SISTEMA
+// ============================================
+
+export interface RequiredPart {
+  partType: string;
+  consumeStation?: string;
+}
+
+export interface RequiredBuffer {
+  to: { shop: string; line: string }
+  capacity: number;
+}
+
+export interface RequiredRoutes {
+  fromStation: string;
+  to: [{ shop: string; line: string, station: string }];
+}
+
+export interface TaktConfig {
+  jph: number;
+  taktMs?: number;
+  shiftStart: string;
+  shiftEnd: string;
+}
+
+export interface ShiftConfig {
+  id: string;
+  start: string;
+  end: string;
+}
+
+export interface PlannedStopConfig {
+  id: string;
+  name: string;
+  type: "LUNCH" | "MEETING" | "MAINTENANCE" | "SHIFT_CHANGE" | "NIGHT_STOP";
+  reason: StopReason;
+  affectsShops?: string[];
+  affectsLines?: string[];
+  startTime: string;
+  durationMn: number;
+  daysOfWeek?: number[];
+}
+
+export interface IFlowPlant {
+  MIX_ITEMS_PER_LINE?: number;
+  colors: string[];
+  models: string[];
+  BUFFER_EMIT_INTERVAL: number;
+  BUFFER_PERSIST_INTERVAL: number;
+  PLANT_EMIT_INTERVAL: number;
+  STOPS_EMIT_INTERVAL: number;
+  OEE_EMIT_INTERVAL: number;
+  CARS_EMIT_INTERVAL: number;
+  shops: Record<string, IShop>; // Tipado dinamicamente para IShop
+  oeeTargets?: Record<string, number>;
+  shifts?: ShiftConfig[];
+  plannedStops?: PlannedStopConfig[];
+  DPHU?: number;
+  targetJPH?: number;
+  typeSpeedFactor?: number;
+  Rework_Time?: number;
+  stationTaktMinFraction?: number;
+  stationTaktMaxFraction?: number;
+  stationstartProduction?: StationLocation[];
+}
+
+// ============================================
+// EVENTOS E LOGS
+// ============================================
+
+export interface LogEvent extends Partial<StationLocation> {
   id: string;
   timestamp: number;
-  type: "MOVE" | "STOP_START" | "STOP_END" | "CAR_CREATED" | "CAR_COMPLETED" | 
-        "DEFECT_DETECTED" | "REWORK_START" | "REWORK_END" | "SHIFT_START" | 
-        "SHIFT_END" | "BUFFER_FULL" | "BUFFER_EMPTY";
-  shop: string;
-  line?: string;
-  station?: string;
+  type: LogEventType;
   carId?: string;
   data?: Record<string, any>;
 }
@@ -154,15 +243,11 @@ export interface MovementLog {
   id: string;
   timestamp: number;
   carId: string;
-  fromShop?: string;
-  fromLine?: string;
-  fromStation?: string;
-  toShop?: string;
-  toLine?: string;
-  toStation?: string;
-  toBuffer?: string;         // se foi para buffer
+  from?: Partial<StationLocation>;
+  to?: Partial<StationLocation>;
+  toBuffer?: string;
   eventType: "MOVE" | "BUFFER_IN" | "BUFFER_OUT" | "REWORK" | "COMPLETE";
-  dwellTimeMs?: number;       // tempo que ficou no posto anterior
+  dwellTimeMs?: number;
 }
 
 export interface TickEvent {
@@ -174,8 +259,26 @@ export interface TickEvent {
   deltaMs: number;
   realTimestamp: number;
 }
+
+// ============================================
+// CALLBACKS DA SIMULAÇÃO
+// ============================================
+
 export type TickListener = (event: TickEvent) => void | Promise<void>;
-export type ClockState = "stopped" | "running" | "paused";
+
+export interface SimulationCallbacks {
+  onTick?: (event: TickEvent, state: any) => void;
+  onStateChange?: (state: any) => void;
+  onCarCreated?: (carId: string, shop: string, line: string, station: string, timestamp: number) => void;
+  onCars?: (cars: any, timestamp: number) => void;
+  onCarMoved?: (carId: string, from: StationLocation, to: StationLocation, timestamp: number) => void;
+  onCarCompleted?: (carId: string, location: StationLocation, totalLeadtimeMs: number, timestamp: number) => void;
+  onBufferIn?: (carId: string, bufferId: string, loc: ShopLineLocation, fromStation: string, timestamp: number) => void;
+  onStopStartedStopLine?: (stop: IStopLine) => void;
+  onStopEndedStopLine?: (stop: IStopLine) => void;
+  [key: string]: any; // Permite extensões de adapters
+}
+
 export interface ISimulationClock {
   readonly state: ClockState;
   readonly speedFactor: number;
@@ -190,6 +293,57 @@ export interface ISimulationClock {
   onStateChange(listener: (state: ClockState) => void): () => void;
 }
 
+export interface OEEData {
+  date: string;
+  shop: IShop | 'ALL';
+  line: ILine | 'ALL';
+  productionTime: number;       // em minutos
+  carsProduction: number;
+  taktTime: number;             // em minutos
+  diffTime: number;             // em minutos
+  oee: number;                  // percentual (0-100)
+  jph: number;                  // carros por hora
+}
+
+export interface OEECalculationInput {
+  shop: IShop | "ALL";
+  line: ILine | "ALL";
+  productionTimeMinutes: number;
+  taktTimeMinutes: number;
+  cars: ICar[];
+  simulatedTimestamp: number;
+  shiftStart: string;           // "07:00"
+  shiftEnd: string;             // "23:48"
+  lastStationId: string;        // ID da última station da linha
+}
+
+
+export interface MTTRMTBFData {
+  date: string;
+  shop: string;
+  line: string;
+  station: string;
+  mttr: number;    // Mean Time To Repair (em minutos)
+  mtbf: number;    // Mean Time Between Failures (em minutos)
+}
+
+export interface MTTRMTBFCalculationInput {
+  shop: string;
+  line: string;
+  station: string;
+  productionTimeMinutes: number;
+  stops: IStopLine[];
+  simulatedTimestamp: number;
+}
+
+export interface PlantSnapshot {
+  readonly timestamp: number;
+  readonly shops: IShop[];
+  readonly totalStations: number;
+  readonly totalOccupied: number;
+  readonly totalFree: number;
+  readonly totalStopped: number;
+}
 
 export interface SimulationState {
   status: ClockState;
@@ -197,64 +351,4 @@ export interface SimulationState {
   simulatedTimeMs: number;
   simulatedTimeFormatted: string;
   speedFactor: number;
-}
-
-export interface SimulationCallbacks {
-  // Eventos básicos de simulação
-  onTick?: (event: TickEvent, state: SimulationState) => void;
-  onStateChange?: (state: SimulationState) => void;
-  
-  // Eventos de carros
-  onCarCreated?: (carId: string, shop: string, line: string, station: string, timestamp: number) => void;
-  // Estado completo dos carros (em memória) - emitido sempre que um novo carro é criado
-  onCars?: (cars: ICar[], timestamp: number) => void;
-  onCarMoved?: (carId: string, fromShop: string, fromLine: string, fromStation: string, 
-                toShop: string, toLine: string, toStation: string, timestamp: number) => void;
-  onCarCompleted?: (carId: string, shop: string, line: string, station: string, 
-                    totalLeadtimeMs: number, timestamp: number) => void;
-  onCarProduced?: (carId: string) => void;
-  onCarEnterStation?: (carId: string, stationId: string) => void;
-  
-  // Eventos de buffer
-  onBufferIn?: (carId: string, bufferId: string, shop: string, line: string, 
-                fromStation: string, timestamp: number) => void;
-  onBufferOut?: (carId: string, bufferId: string, shop: string, line: string, 
-                 toStation: string, timestamp: number) => void;
-  
-  // Eventos de rework
-  onReworkIn?: (carId: string, bufferId: string, shop: string, defectId: string, timestamp: number) => void;
-  onReworkOut?: (carId: string, bufferId: string, shop: string, toStation: string, timestamp: number) => void;
-
-  // Versões detalhadas (adapters)
-  onReworkInDetailed?: (carId: string, bufferId: string, shop: string, line: string, station: string, defectId: string, timestamp: number) => void;
-  onReworkOutDetailed?: (carId: string, bufferId: string, shop: string, line: string, station: string, timestamp: number) => void;
-
-  // Eventos de peças (Part Lines)
-  onPartCreated?: (partId: string, partType: string, model: string, shop: string, line: string, station: string, timestamp: number) => void;
-  onPartConsumed?: (partId: string, partType: string, model: string, carId: string, shop: string, line: string, station: string, timestamp: number) => void;
-  onPartShortage?: (carId: string, partType: string, model: string, shop: string, line: string, station: string, timestamp: number) => void;
-  
-  // Eventos de paradas
-  onStopStarted?: (stopId: string, shop: string, line: string, station: string, 
-                   reason: string, category: string, timestamp: number) => void;
-  onStopEnded?: (stopId: string, shop: string, line: string, station: string, 
-                 reason: string, durationMs: number, timestamp: number) => void;
-  onStationStop?: (stationId: string, reason: string) => void;
-
-  // Versões detalhadas (adapters)
-  onStopStartedStopLine?: (stop: IStopLine) => void;
-  onStopEndedStopLine?: (stop: IStopLine) => void;
-
-  // Eventos de OEE (emitidos ao fim do turno e dinamicamente)
-  onOEECalculated?: (oeeData: any[]) => void;
-  onOEEShiftEnd?: (oeeData: any) => void;
-
-  // Eventos de MTTR/MTBF (emitidos ao fim do turno)
-  onMTTRMTBFCalculated?: (data: any) => void;
-
-  // Eventos de stops com detalhes (inclui planned e random)
-  onStopsWithDetails?: (stops: Map<string, IStopLine>, plannedStops: any[], randomStops: IStopLine[]) => void;
-
-  // Evento para persistir paradas geradas (planejadas e aleatórias)
-  onStopGenerated?: (stop: IStopLine) => void;
 }

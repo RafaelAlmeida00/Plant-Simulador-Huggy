@@ -1,56 +1,29 @@
 // src/domain/factories/OEEFactory.ts
 
-import { ICar, ICarTrace } from '../models/Car';
-import { ILine } from '../models/Line';
-import { IShop } from '../models/Shop';
-
-export interface OEEData {
-    date: string;
-    shop: string;
-    line: string;
-    productionTime: number;       // em minutos
-    carsProduction: number;
-    taktTime: number;             // em minutos
-    diffTime: number;             // em minutos
-    oee: number;                  // percentual (0-100)
-}
-
-export interface OEECalculationInput {
-    shop: string;
-    line: string;
-    productionTimeMinutes: number;
-    taktTimeMinutes: number;
-    cars: ICar[];
-    simulatedTimestamp: number;
-    shiftStart: string;           // "07:00"
-    shiftEnd: string;             // "23:48"
-    lastStationId: string;        // ID da última station da linha
-}
+import { logger } from "../../utils/logger";
+import { ICar, ILine, IShop, OEECalculationInput, OEEData } from "../../utils/shared";
+import { CarFactory } from "./carFactory";
+import { PlantFactory } from "./plantFactory";
 
 export class OEEFactory {
-    /**
-     * Calcula OEE para uma linha específica
-     */
-    public static calculateLineOEE(input: OEECalculationInput): OEEData {
+
+    private carsFactory: CarFactory;
+    private plantFactory: PlantFactory;
+
+    constructor(plantFactory?: PlantFactory, carsFactory?: CarFactory) {
+        this.plantFactory = plantFactory as PlantFactory;
+        this.carsFactory = carsFactory as CarFactory;
+    }
+
+    public calculateLineOEE(input: OEECalculationInput, isDynamic: boolean): OEEData {
         const simDate = new Date(input.simulatedTimestamp);
         const dateStr = simDate.toISOString().split('T')[0];
-
-        // Calcula o shiftStart e shiftEnd em timestamp para o dia (usando UTC para consistência)
         const dayStart = Date.UTC(simDate.getUTCFullYear(), simDate.getUTCMonth(), simDate.getUTCDate(), 0, 0, 0, 0);
         const [startHour, startMinute] = input.shiftStart.split(':').map(Number);
         const shiftStartTs = dayStart + (startHour * 60 + startMinute) * 60 * 1000;
 
-        // Conta carros produzidos
-        // Um carro é considerado produzido quando tem trace na última station da linha
-        // com enter E leave, e o leave >= shiftStart do mesmo dia
-        const carsProduction = OEEFactory.countCarsProduced(
-            input.cars,
-            input.shop,
-            input.line,
-            input.lastStationId,
-            shiftStartTs,
-            dateStr
-        );
+        const line: ILine = input.line as ILine;
+        const carsProduction = this.carsFactory.getCompletedCardByLineCount(line.id)
 
         const productionTime = input.productionTimeMinutes;
         const taktTime = input.taktTimeMinutes;
@@ -59,9 +32,16 @@ export class OEEFactory {
         const diffTime = productionTime - (taktTime * carsProduction);
 
         // OEE = ((taktTime * carsProduction) / productionTime) * 100
-        const oee = productionTime > 0 
-            ? ((taktTime * carsProduction) / productionTime) * 100 
+        const oee = productionTime > 0
+            ? ((taktTime * carsProduction) / productionTime) * 100
             : 0;
+
+        let jph;
+        if (isDynamic) {
+            jph = carsProduction / ((input.simulatedTimestamp - shiftStartTs) / 3600000); // carros por hora
+        } else {
+            jph = carsProduction / (productionTime / 60); // carros por hora
+        }
 
         return {
             date: dateStr,
@@ -71,102 +51,108 @@ export class OEEFactory {
             carsProduction,
             taktTime,
             diffTime,
-            oee: Math.round(oee * 100) / 100  // Arredonda para 2 casas decimais
+            oee: Math.round(oee * 100) / 100,  // Arredonda para 2 casas decimais
+            jph: jph
         };
     }
 
-    /**
-     * Conta quantos carros foram produzidos (saíram da última station) no turno atual
-     */
-    public static countCarsProduced(
-        cars: ICar[],
-        shop: string,
-        line: string,
-        lastStationId: string,
-        shiftStartTs: number,
-        dateStr: string
-    ): number {
-        let count = 0;
+    public calculateShopOEE(input: OEECalculationInput, isDynamic: boolean): OEEData {
+        const simDate = new Date(input.simulatedTimestamp);
+        const dateStr = simDate.toISOString().split('T')[0];
+        const dayStart = Date.UTC(simDate.getUTCFullYear(), simDate.getUTCMonth(), simDate.getUTCDate(), 0, 0, 0, 0);
+        const [startHour, startMinute] = input.shiftStart.split(':').map(Number);
+        const shiftStartTs = dayStart + (startHour * 60 + startMinute) * 60 * 1000;
 
-        for (const car of cars) {
-            for (const trace of car.trace) {
-                // Verifica se o trace é da última station da linha
-                if (trace.shop === shop && 
-                    trace.line === line && 
-                    (trace.station === lastStationId || trace.station.endsWith(`-${lastStationId.split('-').pop()}`))) {
-                    
-                    // Verifica se tem enter E leave
-                    if (trace.enter && trace.leave) {
-                        // Verifica se o leave é >= shiftStart
-                        if (trace.leave >= shiftStartTs) {
-                            // Verifica se é do mesmo dia
-                            const leaveDate = new Date(trace.leave).toISOString().split('T')[0];
-                            if (leaveDate === dateStr) {
-                                count++;
-                                break; // Um carro só conta uma vez para essa linha
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        const shop: IShop = input.shop as IShop;
+        const carsProduction = this.carsFactory.getCompletedCardByShopCount(shop.name)
 
-        return count;
-    }
+        const productionTime = input.productionTimeMinutes;
+        const taktTime = input.taktTimeMinutes;
 
-    /**
-     * Calcula OEE médio para um shop (agregando todas as linhas)
-     */
-    public static calculateShopOEE(lineOEEs: OEEData[]): OEEData | null {
-        if (lineOEEs.length === 0) return null;
+        // diffTime = productionTime - (taktTime * carsProduction)
+        const diffTime = productionTime - (taktTime * carsProduction);
 
-        const shop = lineOEEs[0].shop;
-        const date = lineOEEs[0].date;
-
-        let totalProductionTime = 0;
-        let totalCarsProduction = 0;
-        let totalTaktTimeCars = 0;
-
-        for (const lineOee of lineOEEs) {
-            totalProductionTime += lineOee.productionTime;
-            totalCarsProduction += lineOee.carsProduction;
-            totalTaktTimeCars += lineOee.taktTime * lineOee.carsProduction;
-        }
-
-        const avgTaktTime = totalCarsProduction > 0 
-            ? totalTaktTimeCars / totalCarsProduction 
+        // OEE = ((taktTime * carsProduction) / productionTime) * 100
+        const oee = productionTime > 0
+            ? ((taktTime * carsProduction) / productionTime) * 100
             : 0;
 
-        const diffTime = totalProductionTime - totalTaktTimeCars;
-        const oee = totalProductionTime > 0 
-            ? (totalTaktTimeCars / totalProductionTime) * 100 
-            : 0;
+        let jph;
+        if (isDynamic) {
+            jph = carsProduction / ((input.simulatedTimestamp - shiftStartTs) / 3600000); // carros por hora
+        } else {
+            jph = carsProduction / (productionTime / 60); // carros por hora
+        }
 
         return {
-            date,
-            shop,
-            line: 'ALL',
-            productionTime: totalProductionTime,
-            carsProduction: totalCarsProduction,
-            taktTime: Math.round(avgTaktTime * 100) / 100,
-            diffTime: Math.round(diffTime * 100) / 100,
-            oee: Math.round(oee * 100) / 100
+            date: dateStr,
+            shop: input.shop,
+            line: input.line,
+            productionTime,
+            carsProduction,
+            taktTime,
+            diffTime,
+            oee: Math.round(oee * 100) / 100,  // Arredonda para 2 casas decimais
+            jph: jph
         };
     }
 
-    /**
-     * Calcula OEE dinâmico para emissão em tempo real via WebSocket
-     * Usado durante a simulação para calcular OEE parcial
-     */
-    public static calculateDynamicOEE(input: OEECalculationInput): OEEData {
-        return OEEFactory.calculateLineOEE(input);
+    public calculateOEE(input: OEECalculationInput, isDynamic: boolean): OEEData {
+        const shops = this.plantFactory.getShopsKeys();
+        const simDate = new Date(input.simulatedTimestamp);
+        const dateStr = simDate.toISOString().split('T')[0];
+        let results: OEEData = {
+            date: dateStr,
+            shop: 'ALL',
+            line: 'ALL',
+            productionTime: 0,      // em minutos
+            carsProduction: 0,
+            taktTime: 0,            // em minutos
+            diffTime: 0,            // em minutos
+            oee: 0,                 // percentual (0-100)
+            jph: 0,                 // carros por hora
+        }
+        for (let i = 0; i < shops.length; i++) {
+            let inputParsed: OEECalculationInput = {
+                ...input, // Copia as propriedades de input
+                shop: this.plantFactory.getById("shop", shops[i]) as IShop,
+                line: "ALL"
+            };
+
+            const calc = this.calculateShopOEE(inputParsed, isDynamic);
+
+            results.productionTime += calc.productionTime;
+            results.carsProduction += calc.carsProduction;
+            results.diffTime += calc.diffTime;
+            // Somamos para tirar a média depois
+            results.taktTime += calc.taktTime;
+            results.oee += calc.oee;
+            results.jph += calc.jph;
+        }
+
+        // 2. Calcular as médias e totais finais (Evitando divisão por zero)
+        if (shops.length > 0) {
+            results.taktTime /= shops.length;
+            results.oee /= shops.length;
+            results.jph /= shops.length;
+            // productionTime e carsProduction permanecem como a soma total
+        }
+        return results;
     }
 
-    /**
-     * Extrai a última station de uma linha
-     */
-    public static getLastStationId(line: ILine): string {
-        const lastStation = line.stations[line.stations.length - 1];
-        return lastStation?.id || '';
+
+    public calculateDynamicOEE(input: OEECalculationInput, type: "shop" | "line" | "ALL"): OEEData {
+        const isDynamic = true;
+        if (type === "shop") {
+            return this.calculateShopOEE(input, isDynamic)
+        }
+        if (type === "line") {
+            return this.calculateLineOEE(input, isDynamic)
+        }
+        if (type === "ALL") {
+            return this.calculateOEE(input, isDynamic)
+        }
+        return logger().error("OEEFactory: Tipo de cálculo de OEE dinâmico inválido"), {} as OEEData;
     }
+
 }

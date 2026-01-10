@@ -1,44 +1,5 @@
-import { ICar } from "./Car";
+import { ICar, IStation } from "../../utils/shared";
 
-export type StationStopType =
-  | "NONE"
-  | "BLOCKED_NEXT_FULL"
-  | "STARVED_PREV_EMPTY"
-  | "PROCESS_STOP"
-  | "PLANNED_STOP"
-  | "SHIFT_CHANGE"
-  | "NIGHT_STOP"
-  | "LUNCH"
-  | "MEETING";
-
-// Tipos de parada que bloqueiam operações
-const REAL_STOP_TYPES: ReadonlySet<StationStopType> = new Set([
-  "PROCESS_STOP",
-  "PLANNED_STOP",
-  "SHIFT_CHANGE",
-  "NIGHT_STOP",
-  "LUNCH",
-  "MEETING",
-]);
-
-export interface IStation {
-  id: string;
-  shop: string;
-  line: string;
-  index: number;
-  taktMn: number;
-  isFirstStation?: boolean;  // primeira estação da linha
-  isLastStation?: boolean;   // última estação da linha
-  occupied: boolean;
-  currentCar: ICar | null;
-  isStopped: boolean;
-  stopReason?: string;
-  startStop: number;
-  finishStop: number;
-  stopId?: string;
-  isFirstCar: boolean;
-  taktSg: number;
-}
 
 export class Station implements IStation {
   public id: string;
@@ -59,6 +20,7 @@ export class Station implements IStation {
   public finishStop: number;
   public stopId?: string;
   public isFirstCar: boolean = true;
+  public station: string; 
 
   constructor(config: IStation) {
     this.id = config.id;
@@ -79,6 +41,7 @@ export class Station implements IStation {
     this.stopId = config.stopId;
     this.isFirstCar = true;
     this.taktSg = config.taktSg;
+    this.station = config.station;
   }
 
 }

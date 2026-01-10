@@ -1,9 +1,13 @@
 import { Server } from "./adapters/http/server";
 import { SimulationFactory } from "./domain/factories/SimulationFactory";
-import { simulationEventEmitter } from "./adapters/http/websocket/SimulationEventEmitter";
+import { simulationEventEmitter } from "./app/SimulationEventEmitter";
 import { socketServer } from "./adapters/http/websocket/SocketServer";
 import { DatabaseFactory } from "./adapters/database/DatabaseFactory";
 import { loadDefaultPlantConfig } from "./domain/factories/plantFactory";
+import { OEEData } from "./utils/shared";
+import { MTTRMTBFData } from "./utils/shared";
+import { IStopLine } from "./utils/shared";
+import { logger } from "./utils/logger";
 
 const serverStartTime = Date.now();
 
@@ -84,22 +88,28 @@ export async function StartSimulation() {
         onCarCreated: (carId, shop, line, station, timestamp) => {
             void simulationEventEmitter.emitCarCreated(carId, shop, line, station, timestamp);
         },
-        onCarMoved: (carId, fromShop, fromLine, fromStation, toShop, toLine, toStation, timestamp) => {
-            void simulationEventEmitter.emitCarMoved(carId, fromShop, fromLine, fromStation, toShop, toLine, toStation, timestamp);
+        onCarMoved: (carId: string, from: { shop: string, line: string, station: string }, to: { shop: string, line: string, station: string }, timestamp: number) => {
+            void simulationEventEmitter.emitCarMoved(
+                carId,
+                from.shop, from.line, from.station,
+                to.shop, to.line, to.station,
+                timestamp
+            );
         },
-        onCarCompleted: (carId, shop, line, station, totalLeadtimeMs, timestamp) => {
+        onCarCompleted: (carId: string, location: { shop: string, line: string, station: string }, totalLeadtimeMs: number, timestamp: number) => {
+            const { shop, line, station } = location;
             void simulationEventEmitter.emitCarCompleted(carId, shop, line, station, timestamp, totalLeadtimeMs);
         },
-        onBufferIn: (carId, bufferId, shop, line, fromStation, timestamp) => {
-            void simulationEventEmitter.emitBufferIn(carId, bufferId, shop, line, fromStation, timestamp);
+        onBufferIn: (carId: string, bufferId: string, loc: { shop: string, line: string }, fromStation: string, timestamp: number) => {
+            void simulationEventEmitter.emitBufferIn(carId, bufferId, loc.shop, loc.line, fromStation, timestamp);
         },
-        onBufferOut: (carId, bufferId, shop, line, toStation, timestamp) => {
+        onBufferOut: (carId: string, bufferId: string, shop: string, line: string, toStation: string, timestamp: number) => {
             void simulationEventEmitter.emitBufferOut(carId, bufferId, shop, line, toStation, timestamp);
         },
-        onReworkInDetailed: (carId, bufferId, shop, line, station, defectId, timestamp) => {
+        onReworkInDetailed: (carId: string, bufferId: string, shop: string, line: string, station: string, defectId: string, timestamp: number) => {
             void simulationEventEmitter.emitReworkIn(carId, bufferId, shop, line, station, defectId, timestamp);
         },
-        onReworkOutDetailed: (carId, bufferId, shop, line, station, timestamp) => {
+        onReworkOutDetailed: (carId: string, bufferId: string, shop: string, line: string, station: string, timestamp: number) => {
             void simulationEventEmitter.emitReworkOut(carId, bufferId, shop, line, station, timestamp);
         },
         onStopStartedStopLine: (stop) => {
@@ -109,23 +119,23 @@ export async function StartSimulation() {
             void simulationEventEmitter.emitStopEnded(stop);
         },
         // OEE dinâmico - emite quando há mudança na produção
-        onOEECalculated: (oeeData) => {
+        onOEECalculated: (oeeData: OEEData[]) => {
             simulationEventEmitter.emitOEE(oeeData);
         },
         // OEE no fim do turno - persiste no banco
-        onOEEShiftEnd: (oeeData) => {
+        onOEEShiftEnd: (oeeData: OEEData) => {
             void simulationEventEmitter.persistOEE(oeeData);
         },
         // MTTR/MTBF no fim do turno - persiste no banco
-        onMTTRMTBFCalculated: (data) => {
+        onMTTRMTBFCalculated: (data: MTTRMTBFData) => {
             void simulationEventEmitter.persistMTTRMTBF(data);
         },
         // Stops com detalhes (planned e random)
-        onStopsWithDetails: (stops, plannedStops, randomStops) => {
+        onStopsWithDetails: (stops: Map<string, IStopLine>, plannedStops: any[], randomStops: IStopLine[]) => {
             simulationEventEmitter.emitAllStopsWithDetails(stops, plannedStops, randomStops);
         },
         // Persiste paradas geradas (planejadas e aleatórias) no banco de dados
-        onStopGenerated: (stop) => {
+        onStopGenerated: (stop: IStopLine) => {
             void simulationEventEmitter.persistGeneratedStop(stop);
         }
     });
@@ -137,21 +147,28 @@ export async function StartSimulation() {
 async function main(): Promise<void> {
     startMemoryLogging();
 
+    logger().info('[BOOT] Starting simulation server...');
     // Primeiro processo do boot: banco (inclui criação de tabelas via connect()).
     await DatabaseFactory.getDatabase();
 
+    logger().info('[BOOT] Database connected. Starting simulation...');
     const server = new Server();
+    logger().info('[BOOT] HTTP Server created. Starting simulation instance...');
     const simulation = await StartSimulation();
+    logger().info('[BOOT] Simulation started. Starting HTTP server...');
 
     server.setSimulatorClock(simulation);
+    logger().info('[BOOT] HTTP Server connected to simulation. Starting WebSocket server...');
 
     // Conecta o socket server ao simulador para controle via WebSocket
     socketServer.setSimulator(simulation);
+    logger().info('[BOOT] WebSocket server connected to simulation. Boot process complete.');
 
     // Emit estados periódicos (com throttling dentro do emitter)
     simulation.onTick((tick) => {
         void simulationEventEmitter.emitAllStops(simulation.getStops());
         void simulationEventEmitter.emitAllBuffers(simulation.getBuffers(), tick.simulatedTimestamp);
+        void simulationEventEmitter.emitCars(simulation.getCars(), tick.simulatedTimestamp);
     });
 
     await server.listen();

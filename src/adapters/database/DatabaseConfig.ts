@@ -20,7 +20,7 @@ export class DatabaseConfigFactory {
         if (this.instance) return this.instance;
 
         const nodeEnv = process.env.NODE_ENV || 'test';
-        const dbType = (process.env.DATABASE_TYPE || 'sqlite').toLowerCase();
+        const dbType = (process.env.DATABASE_TYPE || 'postgres').toLowerCase();
 
         switch (nodeEnv) {
             case 'production':
@@ -46,21 +46,21 @@ export class DatabaseConfigFactory {
             case 'aws':
                 return {
                     type: 'aws',
-                    host: process.env.AWS_RDS_HOST || '',
-                    port: parseInt(process.env.AWS_RDS_PORT || '5432', 10),
-                    database: process.env.AWS_RDS_DATABASE || '',
-                    user: process.env.AWS_RDS_USER || '',
-                    password: process.env.AWS_RDS_PASSWORD || '',
+                    host: process.env.AWS_RDS_HOST,
+                    port: process.env.AWS_RDS_PORT as unknown as number,
+                    database: process.env.AWS_RDS_DATABASE,
+                    user: process.env.AWS_RDS_USER,
+                    password: process.env.AWS_RDS_PASSWORD,
                     ssl: true
                 };
 
             case 'gcp':
                 return {
                     type: 'gcp',
-                    connectionString: process.env.GCP_SQL_CONNECTION || '',
-                    database: process.env.GCP_SQL_DATABASE || '',
-                    user: process.env.GCP_SQL_USER || '',
-                    password: process.env.GCP_SQL_PASSWORD || ''
+                    connectionString: process.env.GCP_SQL_CONNECTION,
+                    database: process.env.GCP_SQL_DATABASE,
+                    user: process.env.GCP_SQL_USER,
+                    password: process.env.GCP_SQL_PASSWORD
                 };
 
             case 'local':
@@ -68,18 +68,17 @@ export class DatabaseConfigFactory {
                     type: 'local',
                     host: 'localhost',
                     port: 5432,
-                    database: process.env.LOCAL_DB_NAME || 'simulator',
+                    database: process.env.LOCAL_DB_NAME,
                     user: 'root',
                     password: ''
                 };
-
             case 'postgres':
-            case 'sql':
-            default:
                 return {
                     type: 'postgres',
-                    connectionString: process.env.DATABASE_URL || ''
+                    connectionString: process.env.DATABASE_URL
                 };
+            default:
+                throw new Error(`Unsupported production database type: ${dbType}`);
         }
     }
 

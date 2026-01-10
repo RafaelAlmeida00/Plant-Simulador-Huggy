@@ -63,8 +63,17 @@ import { IFlowPlant } from "../../utils/shared";
  * ============================================================================
  */
 
-export const FlowPlant: any = {
+export const FlowPlant: IFlowPlant = {
 
+  MIX_ITEMS_PER_LINE: 10,
+  colors: ['Red', 'Blue', 'Green', 'Black', 'White', 'Silver', 'Yellow', 'Orange', 'Purple', 'Gray'],
+  models: ['P19', 'P20', 'P35'],
+  BUFFER_EMIT_INTERVAL: 5000, // 5 segundos (WebSocket)
+  BUFFER_PERSIST_INTERVAL: 60 * 60 * 1000, // 1 hora (Banco de dados)
+  PLANT_EMIT_INTERVAL: 10000, // 10 segundos
+  STOPS_EMIT_INTERVAL: 10000, // 10 segundos
+  OEE_EMIT_INTERVAL: 10000, // 10 segundos
+  CARS_EMIT_INTERVAL: 10000, // 10 segundos (WebSocket)
   typeSpeedFactor: 1,
   stationTaktMinFraction: 0.7,
   stationTaktMaxFraction: 0.999,
@@ -97,7 +106,7 @@ export const FlowPlant: any = {
       affectsShops: ["Body"],
       startTime: "12:00",
       durationMn: 60,
-      daysOfWeek: [0,1, 2, 3, 4, 5, 6]
+      daysOfWeek: [0, 1, 2, 3, 4, 5, 6]
     },
     {
       id: "LUNCH_PWT",
@@ -107,7 +116,7 @@ export const FlowPlant: any = {
       affectsShops: ["PWT"],
       startTime: "12:00",
       durationMn: 60,
-      daysOfWeek: [0,1, 2, 3, 4, 5, 6]
+      daysOfWeek: [0, 1, 2, 3, 4, 5, 6]
     },
     {
       id: "LUNCH_PAINT",
@@ -117,7 +126,7 @@ export const FlowPlant: any = {
       affectsShops: ["Paint"],
       startTime: "11:30",
       durationMn: 60,
-      daysOfWeek: [0,1, 2, 3, 4, 5, 6]
+      daysOfWeek: [0, 1, 2, 3, 4, 5, 6]
     },
     {
       id: "LUNCH_TRIM",
@@ -191,7 +200,7 @@ export const FlowPlant: any = {
         // =====================================================================
         // PART LINES (Linhas de Peças) - NÃO têm routes, peças vão para Part Buffer
         // =====================================================================
-        
+
         // CylinderHead - produz peças CYLINDER_HEAD consumidas pela ShortLine
         "CylinderHead": {
           MTTR: Math.random() * 10 + 2,

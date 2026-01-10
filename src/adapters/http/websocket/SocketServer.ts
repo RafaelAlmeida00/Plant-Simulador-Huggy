@@ -2,10 +2,7 @@
 
 import { Server as HttpServer } from 'http';
 import { Server as SocketIOServer, Socket } from 'socket.io';
-import { IBuffer } from '../../../domain/models/Buffer';
-import { ICar } from '../../../domain/models/Car';
-import { IStopLine } from '../../../domain/models/StopLine';
-import { PlantSnapshot } from '../../../domain/services/PlantQueryService';
+import { ICar,IStopLine,IBuffer } from '../../../utils/shared';
 import { SimulationClock } from '../../../app/SimulationClock';
 import { DatabaseFactory } from '../../database/DatabaseFactory';
 
@@ -354,7 +351,7 @@ export class SocketServer {
     }
 
     // Emite estado completo da planta
-    public emitPlantState(snapshot: PlantSnapshot): void {
+    public emitPlantState(snapshot: any): void {
         if (!this.io) return;
 
         const payload: SocketEventData = {

@@ -1,28 +1,16 @@
-import { ICar } from "./Car";
-
-export interface IBuffer {
-    id: string;
-    betweenShopOrLine: "shop" | "line";
-    to: string;
-    from: string;
-    capacity: number;
-    currentCount: number;
-    cars: ICar[];
-    type: "BUFFER" | "REWORK_BUFFER" | "PART_BUFFER";
-    status?: "EMPTY" | "AVAILABLE" | "FULL";
-}
+import { BufferStatus, BufferType, IBuffer, ICar } from "../../utils/shared";
 
 export class Buffer implements IBuffer {
     public id: string;
     public betweenShopOrLine: "shop" | "line";
     public to: string;
     public from: string;
-    public type: "BUFFER" | "REWORK_BUFFER" | "PART_BUFFER";
+    public type: BufferType;
     public capacity: number;
     public currentCount: number;
     public cars: ICar[];
-    public status?: "EMPTY" | "AVAILABLE" | "FULL";
-
+    public status?: BufferStatus;
+    
     constructor(config: IBuffer) {
         this.id = config.id;
         this.betweenShopOrLine = config.betweenShopOrLine;
