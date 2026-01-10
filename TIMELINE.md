@@ -354,3 +354,55 @@ ID PROBLEM RESOLVE 0++
    ```
 
 ---
+
+## ID 009 - OEE WebSocket Payload Sending Full Objects Instead of Identifiers
+1) 2026-01-10 | ~17:00:00
+2) **Main problem**: OEE dynamic data emitted via WebSocket contained full `IShop` and `ILine` objects with all stations, cars, etc.
+3) **Analysis**:
+   - `OEEData` interface defined `shop: IShop | 'ALL'` and `line: ILine | 'ALL'`
+   - When `OEEFactory.calculateLineOEE()` and `calculateShopOEE()` returned data, they included full objects
+   - When serialized to WebSocket, the entire object tree was sent (thousands of bytes per OEE update)
+   - Payload included `_linesArray`, all `stations`, all `currentCar` data, etc.
+   - This caused unnecessary bandwidth usage and made the data hard to parse on the client
+4) **Source Problem**:
+   - `src/utils/shared.ts` | `OEEData` interface lines 296-306
+   - `src/domain/factories/OEEFactory.ts` | Lines 48-49, 89-90 (returning full objects)
+   - `src/app/SimulationEventEmitter.ts` | `emitOEE()` method - no transformation before emit
+5) **Flow before**:
+   ```
+   OEEFactory.calculateLineOEE()
+                          ↓
+   Returns OEEData with shop: IShop, line: ILine (full objects)
+                          ↓
+   SimulationEventEmitter.emitOEE()
+                          ↓
+   socketServer.emitOEE(oeeData) - serializes full objects
+                          ↓
+   Client receives JSON with thousands of bytes of nested data
+   ```
+6) **Solution approach**:
+   - Created new interface `OEEDataEmit` with string identifiers instead of full objects
+   - Added `transformOEEDataForEmit()` method in SimulationEventEmitter
+   - Transform extracts `shop.name` and `line.id` before emitting via WebSocket
+   - Original `OEEData` interface preserved for internal use and database persistence
+7) **Files edited**:
+   - `src/utils/shared.ts` | Lines 308-319 (added `OEEDataEmit` interface)
+   - `src/app/SimulationEventEmitter.ts` | Lines 4, 402-444 (import + transformation logic)
+8) **New flow**:
+   ```
+   OEEFactory.calculateLineOEE()
+                          ↓
+   Returns OEEData with shop: IShop, line: ILine (full objects)
+                          ↓
+   SimulationEventEmitter.emitOEE()
+                          ↓
+   transformOEEDataForEmit() converts to OEEDataEmit:
+     - shop: IShop → shop: string (shop.name)
+     - line: ILine → line: string (line.id)
+                          ↓
+   socketServer.emitOEE(oeeDataEmit) - serializes lightweight data
+                          ↓
+   Client receives clean JSON: { date, shop: "PWT", line: "PWT-CylinderHead", oee, jph, ... }
+   ```
+
+---

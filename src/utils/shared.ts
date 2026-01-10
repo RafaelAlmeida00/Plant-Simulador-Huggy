@@ -305,6 +305,19 @@ export interface OEEData {
   jph: number;                  // carros por hora
 }
 
+// Interface para envio via WebSocket (usa apenas strings para identificadores)
+export interface OEEDataEmit {
+  date: string;
+  shop: string;                 // Nome do shop ou 'ALL'
+  line: string;                 // ID da linha ou 'ALL'
+  productionTime: number;       // em minutos
+  carsProduction: number;
+  taktTime: number;             // em minutos
+  diffTime: number;             // em minutos
+  oee: number;                  // percentual (0-100)
+  jph: number;                  // carros por hora
+}
+
 export interface OEECalculationInput {
   shop: IShop | "ALL";
   line: ILine | "ALL";

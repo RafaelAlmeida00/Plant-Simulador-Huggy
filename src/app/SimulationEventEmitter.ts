@@ -1,7 +1,7 @@
 // src/adapters/http/websocket/SimulationEventEmitter.ts
 
 import { socketServer } from '../adapters/http/websocket/SocketServer';
-import { ICar, IBuffer, IStopLine, OEEData, MTTRMTBFData, IShop, PlantSnapshot } from '../utils/shared';
+import { ICar, IBuffer, IStopLine, OEEData, OEEDataEmit, MTTRMTBFData, IShop, ILine, PlantSnapshot } from '../utils/shared';
 import {
     CarEventRepository,
     StopEventRepository,
@@ -399,6 +399,21 @@ export class SimulationEventEmitter {
         socketServer.emitHealth(status);
     }
 
+    // Transforma OEEData (com objetos completos) em OEEDataEmit (com strings)
+    private transformOEEDataForEmit(oeeData: OEEData[]): OEEDataEmit[] {
+        return oeeData.map(data => ({
+            date: data.date,
+            shop: typeof data.shop === 'string' ? data.shop : (data.shop as IShop).name,
+            line: typeof data.line === 'string' ? data.line : (data.line as ILine).id,
+            productionTime: data.productionTime,
+            carsProduction: data.carsProduction,
+            taktTime: data.taktTime,
+            diffTime: data.diffTime,
+            oee: data.oee,
+            jph: data.jph
+        }));
+    }
+
     // Emite OEE em tempo real via WebSocket
     public emitOEE(oeeData: OEEData[]): void {
         const now = Date.now();
@@ -411,10 +426,11 @@ export class SimulationEventEmitter {
             return;
         }
 
-        // Emite e limpa o pending
+        // Emite e limpa o pending (transformando para OEEDataEmit)
         this.lastOEEEmit = now;
         if (this.pendingOEEData) {
-            socketServer.emitOEE(this.pendingOEEData);
+            const dataToEmit = this.transformOEEDataForEmit(this.pendingOEEData);
+            socketServer.emitOEE(dataToEmit);
             this.pendingOEEData = null;
         }
     }
@@ -422,7 +438,8 @@ export class SimulationEventEmitter {
     // Força emissão do OEE pendente (útil para novos clientes)
     public flushPendingOEE(): void {
         if (this.pendingOEEData) {
-            socketServer.emitOEE(this.pendingOEEData);
+            const dataToEmit = this.transformOEEDataForEmit(this.pendingOEEData);
+            socketServer.emitOEE(dataToEmit);
             this.lastOEEEmit = Date.now();
         }
     }
