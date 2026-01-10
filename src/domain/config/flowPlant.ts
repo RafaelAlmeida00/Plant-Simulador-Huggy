@@ -74,7 +74,7 @@ export const FlowPlant: IFlowPlant = {
   STOPS_EMIT_INTERVAL: 10000, // 10 segundos
   OEE_EMIT_INTERVAL: 10000, // 10 segundos
   CARS_EMIT_INTERVAL: 10000, // 10 segundos (WebSocket)
-  typeSpeedFactor: 1,
+  typeSpeedFactor: 100,
   stationTaktMinFraction: 0.7,
   stationTaktMaxFraction: 0.999,
   stationstartProduction: [
