@@ -49,8 +49,6 @@ export class SimulationFlow {
         logger().debug(`Cars moved through stations for tick ${this.event.tickNumber}`);
         this.moveCarsThroughBuffers();
         logger().debug(`Cars moved through buffers for tick ${this.event.tickNumber}`);
-        this.calculateOEE(false);
-        logger().debug(`OEE calculated for tick ${this.event.tickNumber}`);
         this.checkProductionDayEnd();
         logger().debug(`Production day end checked for tick ${this.event.tickNumber}`);
 
@@ -1176,6 +1174,7 @@ export class SimulationFlow {
                 logger().info(`Shift end detected for line ${line.id} at ${new Date(shiftEndTimestamp).toISOString()}`);
                 this.calculateOEE(true);
                 this.calculateMTTRMTBF();
+                 logger().info(`OEE and MTTR/MTBF calculated for Shift End`);
             }
 
             const shiftStartPassedInRange = this.isTimestampInRange(shiftStartTimestamp);
@@ -1186,6 +1185,26 @@ export class SimulationFlow {
                 this.carService.cleanCarsCompleted();
             }
         }
+
+        if (this.flowPlant.shifts) {
+            const starProduction = this.flowPlant.shifts[0]?.start;
+            const endProduction = this.flowPlant.shifts[this.flowPlant.shifts.length - 1]?.end;
+
+            const startHour = parseInt(starProduction.substring(0, 2), 10);
+            const startMinute = parseInt(starProduction.substring(3, 5), 10);
+            const endHour = parseInt(endProduction.substring(0, 2), 10);
+            const endMinute = parseInt(endProduction.substring(3, 5), 10);
+
+            const shiftEndTimestamp = todayBaseTimestamp + endHour * 3600000 + endMinute * 60000;
+            const shiftStartTimestamp = todayBaseTimestamp + startHour * 3600000 + startMinute * 60000;
+
+            if (this.event.simulatedTimestamp >= shiftStartTimestamp && this.event.simulatedTimestamp <= shiftEndTimestamp) {
+                this.calculateOEE(false);
+                logger().info(`OEE calculated`);
+            }
+
+        }
+
 
         this.cleanOldTrackingEntries();
     }
