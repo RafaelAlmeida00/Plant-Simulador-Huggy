@@ -133,14 +133,7 @@ export async function StartSimulation() {
         onMTTRMTBFCalculated: (data: MTTRMTBFData) => {
             void simulationEventEmitter.persistMTTRMTBF(data);
         },
-        // Stops com detalhes (planned e random)
-        onStopsWithDetails: (stops: Map<string, IStopLine>, plannedStops: any[], randomStops: IStopLine[]) => {
-            simulationEventEmitter.emitAllStopsWithDetails(stops, plannedStops, randomStops);
-        },
-        // Persiste paradas geradas (planejadas e aleatórias) no banco de dados
-        onStopGenerated: (stop: IStopLine) => {
-            void simulationEventEmitter.persistGeneratedStop(stop);
-        }
+
     });
 
     simulation.start();

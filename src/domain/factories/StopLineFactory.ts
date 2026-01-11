@@ -1,4 +1,4 @@
-import { ILine, IShop, IStation, IStopLine, StopCategory, StopReason, StopSeverity, StopType } from "../../utils/shared";
+import { ILine, IShop, IStation, IStopLine, StopCategory, StopSeverity, StopType } from "../../utils/shared";
 import { StopLine } from "../models/StopLine";
 import { getActiveFlowPlant, PlantFactory } from "./plantFactory";
 import { logger } from "../../utils/logger";

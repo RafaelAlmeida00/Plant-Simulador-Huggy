@@ -318,55 +318,10 @@ export class SimulationEventEmitter {
             this.lastBufferEmit = now;
             socketServer.emitAllBuffers(buffers);
         }
-
-        if (this.persistEnabled && (now - this.lastBufferPersist >= this.flowPlantConfig.BUFFER_PERSIST_INTERVAL)) {
-            this.lastBufferPersist = now;
-            try {
-                for (const [id, buffer] of buffers) {
-                    await this.bufferStateRepo.create({
-                        buffer_id: buffer.id,
-                        from_location: buffer.from,
-                        to_location: buffer.to,
-                        capacity: buffer.capacity,
-                        current_count: buffer.currentCount,
-                        status: buffer.status,
-                        type: buffer.type,
-                        car_ids: buffer.cars.map(c => c.id),
-                        timestamp
-                    });
-                }
-                console.log(`[EVENT_EMITTER] Buffer states persisted at ${new Date(now).toISOString()}`);
-            } catch (error) {
-                console.error('[EVENT_EMITTER] Error persisting buffer states:', error);
-            }
-        }
     }
 
     public async emitPlantState(snapshot: PlantSnapshot): Promise<void> {
         socketServer.emitPlantState(snapshot);
-
-        if (!this.persistEnabled) {
-            return;
-        }
-
-        const now = Date.now();
-        if (now - this.lastPlantEmit < this.flowPlantConfig.PLANT_EMIT_INTERVAL) {
-            return;
-        }
-        this.lastPlantEmit = now;
-
-        try {
-            await this.plantSnapshotRepo.create({
-                timestamp: snapshot.timestamp,
-                total_stations: snapshot.totalStations,
-                total_occupied: snapshot.totalOccupied,
-                total_free: snapshot.totalFree,
-                total_stopped: snapshot.totalStopped,
-                snapshot_data: snapshot
-            });
-        } catch (error) {
-            console.error('[EVENT_EMITTER] Error persisting plant snapshot:', error);
-        }
     }
 
     public emitHealth(status: {
@@ -475,42 +430,6 @@ export class SimulationEventEmitter {
         }
     }
 
-    public emitAllStopsWithDetails(
-        stops: Map<string, IStopLine>,
-        plannedStops: any[],
-        randomStops: IStopLine[]
-    ): void {
-        const now = Date.now();
-        if (now - this.lastStopsEmit < this.flowPlantConfig.STOPS_EMIT_INTERVAL) {
-            return;
-        }
-        this.lastStopsEmit = now;
-        socketServer.emitStopsWithDetails(stops, plannedStops, randomStops);
-    }
-
-    public async persistGeneratedStop(stop: IStopLine): Promise<void> {
-        if (!this.persistEnabled) return;
-
-        try {
-            await this.stopEventRepo.create({
-                stop_id: stop.id.toString(),
-                shop: stop.shop,
-                line: stop.line,
-                station: stop.station,
-                reason: stop.reason,
-                severity: stop.severity || undefined,
-                type: stop.type,
-                category: stop.category,
-                start_time: stop.startTime,
-                end_time: stop.endTime,
-                status: stop.status,
-                duration_ms: stop.durationMs
-            });
-            console.log(`[EVENT_EMITTER] Persisted generated stop: ${stop.id} (${stop.type}) - ${stop.reason}`);
-        } catch (error) {
-            console.error('[EVENT_EMITTER] Error persisting generated stop:', error);
-        }
-    }
 }
 
 export const simulationEventEmitter = SimulationEventEmitter.getInstance();

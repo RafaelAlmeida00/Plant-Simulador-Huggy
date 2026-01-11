@@ -13,24 +13,8 @@ export type LogEventType =
   | "DEFECT_DETECTED" | "REWORK_START" | "REWORK_END" | "SHIFT_START"
   | "SHIFT_END" | "BUFFER_FULL" | "BUFFER_EMPTY";
 
-export type StopReason =
-  | "NEXT_FULL"           // próximo posto/buffer cheio
-  | "PREV_EMPTY"          // posto anterior vazio
-  | "RANDOM_FAILURE"      // falha aleatória (OEE)
-  | "PLANNED_STOP"        // parada planejada
-  | "SHIFT_CHANGE"        // troca de turno
-  | "NIGHT_STOP"          // parada noturna
-  | "LUNCH"               // almoço
-  | "MEETING"             // reunião
-  | "PROCESS_STOP"        // parada de processo genérica
-  | "FALTA_PORTAS"        // Falta de peças específicas
-  | "FALTA_MATERIAL"      // material geral
-  | "BLOCKED_DOWNSTREAM"  // propagação: downstream cheio
-  | "STARVED_UPSTREAM"    // propagação: upstream vazio
-  | "DEFECT_REWORK"       // carro desviado para retrabalho
-  | "PROCESS_QUALITY_FAILURE";
 
-export type StopCategory = "MICRO" | "CAUSE" | "PROCESS_QUALITY_FAILURE" | "PROPAGATION" | "PLANNED_STOP" | "SHIFT_CHANGE" | "NIGHT_STOP" | "LUNCH" | "MEETING";
+export type StopCategory = "PROCESS_QUALITY_FAILURE" | "PROPAGATION" | "PLANNED_STOP" | "SHIFT_CHANGE" | "NIGHT_STOP" | "LUNCH" | "MEETING";
 
 // ============================================
 // INTERFACES BASE E LOCALIZAÇÃO
@@ -89,7 +73,7 @@ export interface ICar {
 
 export interface IStopLine extends StationLocation {
   id: number;
-  reason: string | StopReason;
+  reason: string;
   startTime: number;
   endTime?: number;
   status: StopStatus;
@@ -196,7 +180,7 @@ export interface PlannedStopConfig {
   id: string;
   name: string;
   type: "LUNCH" | "MEETING" | "MAINTENANCE" | "SHIFT_CHANGE" | "NIGHT_STOP";
-  reason: StopReason;
+  reason: string;
   affectsShops?: string[];
   affectsLines?: string[];
   startTime: string;

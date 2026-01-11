@@ -1,6 +1,6 @@
 // src/domain/services/StopLineService.ts
 
-import { ILine, IShop, IStation, IStopLine, StopCategory, StopReason, StopSeverity, StopType } from "../../utils/shared";
+import { ILine, IShop, IStation, IStopLine, StopCategory, StopSeverity, StopType } from "../../utils/shared";
 import { StopLine } from "../models/StopLine";
 import { PlantService } from "./PlantService";
 import { logger } from "../../utils/logger";
@@ -33,7 +33,7 @@ export class StopLineService {
         this.stopLineFactory.stopIdCounter = value;
     }
 
-    public startStop(timeStart: number, shopName: string, lineName: string, stationId: string, reason: StopReason, type: StopType, category: StopCategory): void {
+    public startStop(timeStart: number, shopName: string, lineName: string, stationId: string, reason: string, type: StopType, category: StopCategory): void {
         const stopLine = new StopLine({
             id: ++this.stopIdCounter,
             shop: shopName,
