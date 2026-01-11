@@ -1120,11 +1120,13 @@ export class SimulationFlow {
                 };
 
                 const stationData: MTTRMTBFData = this.mttrmtbfService.calculateStationMTTRMTBF(stationInput);
+                this.callbacks?.onMTTRMTBFCalculated(stationData);
                 stationMTTRMTBFData.push(stationData);
             }
 
             const lineMTTRMTBF = this.mttrmtbfService.calculateLineMTTRMTBF(stationMTTRMTBFData, productionTimeMinutes);
             if (lineMTTRMTBF) {
+                this.callbacks?.onMTTRMTBFCalculated(lineMTTRMTBF);
                 const shopLineData = shopResults.get(line.shop) || [];
                 shopLineData.push(lineMTTRMTBF);
                 shopResults.set(line.shop, shopLineData);
@@ -1136,7 +1138,10 @@ export class SimulationFlow {
             if (!shopLineData || shopLineData.length === 0) continue;
 
             const shopMTTRMTBF = this.mttrmtbfService.calculateShopMTTRMTBF(shopLineData);
+            this.callbacks?.onMTTRMTBFCalculated(shopMTTRMTBF);
+
         }
+
     }
 
 
