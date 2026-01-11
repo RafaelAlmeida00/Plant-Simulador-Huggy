@@ -323,7 +323,6 @@ export interface OEECalculationInput {
   line: ILine | "ALL";
   productionTimeMinutes: number;
   taktTimeMinutes: number;
-  cars: ICar[];
   simulatedTimestamp: number;
   shiftStart: string;           // "07:00"
   shiftEnd: string;             // "23:48"

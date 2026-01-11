@@ -6,11 +6,12 @@ export class MTTRMTBFFactory {
         const simDate = new Date(input.simulatedTimestamp);
         const dateStr = simDate.toISOString().split('T')[0];
 
-        // Filtra apenas paradas do tipo RANDOM_GENERATE (as geradas no início do turno)
-        const randomStops = input.stops.filter(stop => 
+        const randomStops = input.stops.filter(stop =>
             stop.shop === input.shop &&
             stop.line === input.line &&
-            (stop.station === input.station || stop.station === 'ALL')
+            (stop.station === input.station || stop.station === 'ALL') &&
+            stop.type !== 'PLANNED' &&
+            stop.status === 'COMPLETED'
         );
 
         const stopCount = randomStops.length;

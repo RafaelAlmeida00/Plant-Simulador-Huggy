@@ -61,11 +61,11 @@ The project follows **Clean Architecture** principles with clear layer separatio
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                        DOMAIN LAYER                             │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
-│  │   Models    │  │  Factories  │  │     Configuration       │  │
-│  │ Car,Station │  │ CarFactory  │  │      flowPlant.ts       │  │
-│  │ Buffer,Line │  │ PlantFactory│  │                         │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
+│  ┌─────────────┐  ┌──────────────┐  ┌─────────────────────────┐ │
+│  │   Models    │  │   Services   │  │     Configuration       │ │
+│  │ Car,Station │  │ CarService   │  │      flowPlant.ts       │ │
+│  │ Buffer,Line │  │ PlantService │  │   ServiceLocator.ts     │ │
+│  └─────────────┘  └──────────────┘  └─────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -73,7 +73,7 @@ The project follows **Clean Architecture** principles with clear layer separatio
 
 | Layer | Location | Responsibility |
 |-------|----------|----------------|
-| **Domain** | `src/domain/` | Business entities, factories, configuration. No external dependencies. |
+| **Domain** | `src/domain/` | Business entities, services, models, configuration. No external dependencies. |
 | **Application** | `src/app/` | Orchestration, simulation logic, event emission. Depends only on Domain. |
 | **Adapters** | `src/adapters/` | External interfaces (HTTP, WebSocket, Database). Depends on Application. |
 
@@ -81,19 +81,26 @@ The project follows **Clean Architecture** principles with clear layer separatio
 
 ## Design Patterns
 
-### 1. Factory Pattern
+### 1. Service Locator Pattern
 
-Creates complex objects with encapsulated logic:
+**Centralized dependency injection** to manage service initialization and break circular dependencies:
 
-| Factory | Location | Purpose |
+Services are organized in `domain/services/` and managed by `ServiceLocator`:
+
+| Service | Location | Purpose |
 |---------|----------|---------|
-| `SimulationFactory` | `domain/factories/` | Creates SimulationClock instances |
-| `PlantFactory` | `domain/factories/` | Builds entire plant structure from config |
-| `CarFactory` | `domain/factories/` | Creates, moves, and completes cars |
-| `BufferFactory` | `domain/factories/` | Manages buffer lifecycle |
-| `StopLineFactory` | `domain/factories/` | Generates and schedules stops |
-| `OEEFactory` | `domain/factories/` | Calculates OEE metrics |
-| `MTTRMTBFFactory` | `domain/factories/` | Calculates MTTR/MTBF metrics |
+| `PlantService` | `domain/services/` | Builds entire plant structure, manages stations and lines |
+| `CarService` | `domain/services/` | Creates, moves, and completes cars/parts |
+| `BufferService` | `domain/services/` | Manages buffer lifecycle and car storage |
+| `StopLineService` | `domain/services/` | Generates and schedules production stops |
+| `OEEService` | `domain/services/` | Calculates OEE metrics (per line, shop, and global) |
+| `MTTRMTBFService` | `domain/services/` | Calculates MTTR/MTBF reliability metrics |
+| `ServiceLocator` | `domain/services/` | Central locator that initializes and provides access to all services |
+
+**Circular Dependency Resolution:**
+- `CarService` and `BufferService` have a circular dependency (cars go to buffers, buffers need to complete cars)
+- Resolved via **callback pattern**: `BufferService.setCarCompletionCallback(callback)`
+- `CarService` registers its completion logic with `BufferService` during initialization
 
 ### 2. Repository Pattern
 
@@ -164,7 +171,7 @@ Interchangeable implementations:
 |------|------------|---------|
 | Interfaces | `I` prefix | `ICar`, `IStation`, `IBuffer` |
 | Types | PascalCase | `TaktConfig`, `RequiredPart` |
-| Factories | `*Factory` suffix | `CarFactory`, `PlantFactory` |
+| Services | `*Service` suffix | `CarService`, `PlantService` |
 | Repositories | `*Repository` suffix | `CarEventRepository` |
 | Controllers | `*Controller` suffix | `EventsController` |
 
@@ -180,7 +187,7 @@ src/
 ├── domain/               # Business logic
 │   ├── config/           # Configuration
 │   ├── models/           # Entities
-│   └── factories/        # Object creation
+│   └── services/         # Business services (dependency injection)
 └── utils/                # Shared utilities
 ```
 
@@ -212,10 +219,10 @@ The domain layer (`src/domain/`) should never import from `adapters/` or have kn
 
 All new entities must have interfaces defined in `src/utils/shared.ts` before implementation.
 
-### Rule 3: Factory for Creation
-> **Complex object creation goes through factories**
+### Rule 3: Services for Business Logic
+> **All business logic goes through services**
 
-Never create domain objects directly with `new`. Use appropriate factory methods.
+Domain objects are accessed through services managed by ServiceLocator. Never instantiate factories or services directly.
 
 ### Rule 4: Repository for Data Access
 > **All database operations through repositories**
@@ -235,10 +242,10 @@ Don't mutate objects. Create new instances with updated values when possible.
 ### Rule 7: Single Responsibility
 > **Each file/class has ONE job**
 
-- Factories CREATE objects
-- Repositories ACCESS data
+- Services MANAGE business logic (car movement, buffers, stops, metrics)
+- Repositories ACCESS data (database persistence)
 - Controllers HANDLE HTTP requests
-- SimulationFlow EXECUTES business logic
+- SimulationFlow ORCHESTRATES business logic via services
 
 ### Rule 8: Explicit over Implicit
 > **Be explicit in all operations**
@@ -481,14 +488,14 @@ src/
 │   │   ├── Line.ts
 │   │   ├── Shop.ts
 │   │   └── StopLine.ts
-│   └── factories/                     # Object creation
-│       ├── SimulationFactory.ts
-│       ├── PlantFactory.ts
-│       ├── CarFactory.ts
-│       ├── BufferFactory.ts
-│       ├── StopLineFactory.ts
-│       ├── OEEFactory.ts
-│       └── MTTRMTBFFactory.ts
+│   └── services/                      # Business services (dependency injection)
+│       ├── ServiceLocator.ts
+│       ├── PlantService.ts
+│       ├── CarService.ts
+│       ├── BufferService.ts
+│       ├── StopLineService.ts
+│       ├── OEEService.ts
+│       └── MTTRMTBFService.ts
 └── utils/                             # Utilities
     ├── shared.ts                      # TypeScript interfaces
     ├── logger.ts                      # Pino logging
@@ -505,7 +512,8 @@ src/
 | `src/app/SimulationFlow.ts` | ~1037 | Core business logic - car movement, stops, buffers, OEE/MTTR/MTBF calculation |
 | `src/domain/config/flowPlant.ts` | ~778 | Complete plant configuration (shops, lines, buffers) |
 | `src/app/SimulationClock.ts` | ~393 | Simulation orchestration + tick loop |
-| `src/domain/factories/PlantFactory.ts` | ~300+ | Plant structure initialization |
+| `src/domain/services/PlantService.ts` | ~488 | Plant structure initialization and management |
+| `src/domain/services/ServiceLocator.ts` | ~97 | Centralized dependency injection and service management |
 | `src/utils/shared.ts` | ~350+ | All TypeScript interfaces & types |
 | `src/app/SimulationEventEmitter.ts` | ~500+ | Event hub (WebSocket + persistence) |
 | `src/adapters/database/repositories/BaseRepository.ts` | ~94 | Abstract repository pattern |
@@ -649,4 +657,4 @@ DB_TYPE=sqlite npm run dev
 
 * If you are a IA or is a IA Claude Model by Anthropic, update this file always that you make a edit and get new informations about the project, change the architeture, logic and rules of the simulator. Read and do the command on file TIMELINE.md. Also, update the data change below:
 
-*Last updated: 2026-01-10 17:00:00*
+*Last updated: 2026-01-12 00:30:00*

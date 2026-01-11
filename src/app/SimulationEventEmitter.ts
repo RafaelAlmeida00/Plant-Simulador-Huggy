@@ -27,7 +27,7 @@ export class SimulationEventEmitter {
     private lastStopsEmit: number = 0;
     private lastOEEEmit: number = 0;
     private lastCarsEmit: number = 0; // Controle separado para emissão de cars
-    private pendingOEEData: OEEData[] | null = null; // Guarda último OEE para não perder
+    private pendingOEEDataMap: Map<string, OEEData> = new Map();
     private flowPlantConfig = getActiveFlowPlant();
 
     private constructor() {
@@ -50,11 +50,9 @@ export class SimulationEventEmitter {
         this.persistEnabled = enabled;
     }
 
-    // Emite estado completo da lista de carros (estrutura completa do Car)
     public async emitCars(cars: Map<string, ICar>, _timestamp?: number): Promise<void> {
         const now = Date.now();
 
-        // Emissão WebSocket: a cada CARS_EMIT_INTERVAL (10 segundos por padrão)
         if (now - this.lastCarsEmit >= this.flowPlantConfig.CARS_EMIT_INTERVAL) {
             this.lastCarsEmit = now;
             const carsArray = Array.from(cars.values());
@@ -62,7 +60,6 @@ export class SimulationEventEmitter {
         }
     }
 
-    // Emite evento de carro criado
     public async emitCarCreated(carId: string, shop: string, line: string, station: string, timestamp: number): Promise<void> {
         const event = {
             carId,
@@ -89,7 +86,6 @@ export class SimulationEventEmitter {
         }
     }
 
-    // Emite evento de carro movido
     public async emitCarMoved(carId: string, fromShop: string, fromLine: string, fromStation: string,
         toShop: string, toLine: string, toStation: string, timestamp: number): Promise<void> {
         const event = {
@@ -119,7 +115,6 @@ export class SimulationEventEmitter {
         }
     }
 
-    // Emite evento de carro completado
     public async emitCarCompleted(carId: string, shop: string, line: string, station: string,
         timestamp: number, totalLeadtimeMs: number): Promise<void> {
         const event = {
@@ -149,7 +144,6 @@ export class SimulationEventEmitter {
         }
     }
 
-    // Emite evento de carro entrando em buffer
     public async emitBufferIn(carId: string, bufferId: string, shop: string, line: string,
         station: string, timestamp: number): Promise<void> {
         const event = {
@@ -179,7 +173,6 @@ export class SimulationEventEmitter {
         }
     }
 
-    // Emite evento de carro saindo de buffer
     public async emitBufferOut(carId: string, bufferId: string, shop: string, line: string,
         station: string, timestamp: number): Promise<void> {
         const event = {
@@ -209,7 +202,6 @@ export class SimulationEventEmitter {
         }
     }
 
-    // Emite evento de carro entrando em rework
     public async emitReworkIn(carId: string, bufferId: string, shop: string, line: string,
         station: string, defectId: string, timestamp: number): Promise<void> {
         const event = {
@@ -239,7 +231,6 @@ export class SimulationEventEmitter {
         }
     }
 
-    // Emite evento de carro saindo de rework
     public async emitReworkOut(carId: string, bufferId: string, shop: string, line: string,
         station: string, timestamp: number): Promise<void> {
         const event = {
@@ -269,7 +260,6 @@ export class SimulationEventEmitter {
         }
     }
 
-    // Emite evento de parada iniciada
     public async emitStopStarted(stop: IStopLine): Promise<void> {
 
         if (this.persistEnabled) {
@@ -294,7 +284,6 @@ export class SimulationEventEmitter {
         }
     }
 
-    // Emite evento de parada finalizada
     public async emitStopEnded(stop: IStopLine): Promise<void> {
 
         if (this.persistEnabled) {
@@ -313,7 +302,6 @@ export class SimulationEventEmitter {
         }
     }
 
-    // Emite estado atual de todos os stops (com throttling)
     public emitAllStops(stops: Map<string, IStopLine>): void {
         const now = Date.now();
         if (now - this.lastStopsEmit < this.flowPlantConfig.STOPS_EMIT_INTERVAL) {
@@ -323,17 +311,14 @@ export class SimulationEventEmitter {
         socketServer.emitAllStops(stops);
     }
 
-    // Emite estado atual de todos os buffers
     public async emitAllBuffers(buffers: Map<string, IBuffer>, timestamp: number): Promise<void> {
         const now = Date.now();
 
-        // Emissão WebSocket: a cada 5 segundos
         if (now - this.lastBufferEmit >= this.flowPlantConfig.BUFFER_EMIT_INTERVAL) {
             this.lastBufferEmit = now;
             socketServer.emitAllBuffers(buffers);
         }
 
-        // Persistência em banco: a cada 1 hora (evita volume excessivo)
         if (this.persistEnabled && (now - this.lastBufferPersist >= this.flowPlantConfig.BUFFER_PERSIST_INTERVAL)) {
             this.lastBufferPersist = now;
             try {
@@ -357,12 +342,9 @@ export class SimulationEventEmitter {
         }
     }
 
-    // Emite estado completo da planta
     public async emitPlantState(snapshot: PlantSnapshot): Promise<void> {
-        // Emissão via websocket: a cada tick
         socketServer.emitPlantState(snapshot);
 
-        // Persistência em banco: com throttling (evita volume excessivo)
         if (!this.persistEnabled) {
             return;
         }
@@ -387,7 +369,6 @@ export class SimulationEventEmitter {
         }
     }
 
-    // Emite health status
     public emitHealth(status: {
         serverStatus: 'healthy' | 'unhealthy';
         simulatorStatus: 'running' | 'stopped' | 'paused';
@@ -399,7 +380,6 @@ export class SimulationEventEmitter {
         socketServer.emitHealth(status);
     }
 
-    // Transforma um único OEEData em OEEDataEmit
     private transformSingleOEEData(data: OEEData): OEEDataEmit {
         return {
             date: data.date,
@@ -414,49 +394,51 @@ export class SimulationEventEmitter {
         };
     }
 
-    // Transforma OEEData (com objetos completos) em OEEDataEmit (com strings)
     private transformOEEDataForEmit(oeeData: OEEData | OEEData[]): OEEDataEmit[] {
         const dataArray = Array.isArray(oeeData) ? oeeData : [oeeData];
         return dataArray.map(data => this.transformSingleOEEData(data));
     }
 
-    // Emite OEE em tempo real via WebSocket (aceita um único OEEData ou array)
+    private getOEEKey(shop: string | any, line: string | any): string {
+        const shopStr = typeof shop === 'string' ? shop : (shop as any).name || String(shop);
+        const lineStr = typeof line === 'string' ? line : (line as any).id || String(line);
+        return `${shopStr}::${lineStr}`;
+    }
+
     public emitOEE(oeeData: OEEData | OEEData[]): void {
         const now = Date.now();
 
-        // Normaliza para array e acumula os dados pendentes
         const newData = Array.isArray(oeeData) ? oeeData : [oeeData];
 
-        if (this.pendingOEEData) {
-            this.pendingOEEData.push(...newData);
-        } else {
-            this.pendingOEEData = [...newData];
+        for (const data of newData) {
+            const key = this.getOEEKey(data.shop, data.line);
+            this.pendingOEEDataMap.set(key, data);
         }
 
-        // Verifica se pode emitir (throttle)
         if (now - this.lastOEEEmit < this.flowPlantConfig.OEE_EMIT_INTERVAL) {
             return;
         }
 
-        // Emite e limpa o pending (transformando para OEEDataEmit)
         this.lastOEEEmit = now;
-        if (this.pendingOEEData) {
-            const dataToEmit = this.transformOEEDataForEmit(this.pendingOEEData);
+        if (this.pendingOEEDataMap.size > 0) {
+            const dataArray = Array.from(this.pendingOEEDataMap.values());
+            const dataToEmit = this.transformOEEDataForEmit(dataArray);
             socketServer.emitOEE(dataToEmit);
-            this.pendingOEEData = null;
+            console.log(`[EVENT_EMITTER] Emitted ${dataToEmit.length} deduplicated OEE records`);
+            this.pendingOEEDataMap.clear();
         }
     }
 
-    // Força emissão do OEE pendente (útil para novos clientes)
     public flushPendingOEE(): void {
-        if (this.pendingOEEData) {
-            const dataToEmit = this.transformOEEDataForEmit(this.pendingOEEData);
+        if (this.pendingOEEDataMap.size > 0) {
+            const dataArray = Array.from(this.pendingOEEDataMap.values());
+            const dataToEmit = this.transformOEEDataForEmit(dataArray);
             socketServer.emitOEE(dataToEmit);
+            console.log(`[EVENT_EMITTER] Flushed ${dataToEmit.length} deduplicated OEE records to new client`);
             this.lastOEEEmit = Date.now();
         }
     }
 
-    // Persiste OEE no banco de dados (chamado no fim do turno)
     public async persistOEE(oeeData: OEEData): Promise<void> {
         if (!this.persistEnabled) return;
 
@@ -476,7 +458,6 @@ export class SimulationEventEmitter {
         }
     }
 
-    // Persiste MTTR/MTBF no banco de dados (chamado no fim do turno)
     public async persistMTTRMTBF(data: MTTRMTBFData): Promise<void> {
         if (!this.persistEnabled) return;
 
@@ -494,7 +475,6 @@ export class SimulationEventEmitter {
         }
     }
 
-    // Emite estado de todos os stops com paradas planejadas e aleatórias
     public emitAllStopsWithDetails(
         stops: Map<string, IStopLine>,
         plannedStops: any[],
@@ -508,7 +488,6 @@ export class SimulationEventEmitter {
         socketServer.emitStopsWithDetails(stops, plannedStops, randomStops);
     }
 
-    // Persiste parada gerada (planejada ou aleatória) no banco de dados
     public async persistGeneratedStop(stop: IStopLine): Promise<void> {
         if (!this.persistEnabled) return;
 

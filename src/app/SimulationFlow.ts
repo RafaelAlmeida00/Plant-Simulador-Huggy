@@ -1,12 +1,13 @@
 import { log } from "console";
-import { BufferFactory } from "../domain/factories/BufferFactory";
-import { CarFactory } from "../domain/factories/carFactory";
-import { MTTRMTBFFactory } from "../domain/factories/MTTRMTBFFactory";
-import { OEEFactory } from "../domain/factories/OEEFactory";
-import { getActiveFlowPlant, PlantFactory } from "../domain/factories/plantFactory";
-import { StopLineFactory } from "../domain/factories/StopLineFactory";
+import { CarService } from "../domain/services/CarService";
+import { MTTRMTBFService } from "../domain/services/MTTRMTBFService";
+import { OEEService } from "../domain/services/OEEService";
+import { PlantService } from "../domain/services/PlantService";
+import { StopLineService } from "../domain/services/StopLineService";
 import { logger } from "../utils/logger";
 import { TickEvent, SimulationCallbacks, IStation, ILine, IBuffer, ICar, ICarTrace, StationLocation, IStopLine, OEECalculationInput, MTTRMTBFCalculationInput, MTTRMTBFData, OEEData, IShop } from "../utils/shared";
+import { BufferService } from "../domain/services/BufferService";
+import { getActiveFlowPlant } from "../domain/factories/plantFactory";
 
 export class SimulationFlow {
     private event: TickEvent;
@@ -14,23 +15,23 @@ export class SimulationFlow {
     private alternateReworkPull: boolean = false;
     private flowPlant = getActiveFlowPlant();
     private reworkTimeMs: number = (this.flowPlant.Rework_Time || 60) * 60000;
-    private carsFactory: CarFactory;
-    private stopLineFactory: StopLineFactory;
-    private bufferFactory: BufferFactory;
-    private plantFactory: PlantFactory;
-    private oeeFactory: OEEFactory;
-    private mttrmtbfFactory: MTTRMTBFFactory;
+    private carService: CarService;
+    private stopService: StopLineService;
+    private bufferService: BufferService;
+    private plantService: PlantService;
+    private oeeService: OEEService;
+    private mttrmtbfService: MTTRMTBFService;
     private prevSimulatedTimestamp: number = 0;
     private processedShiftEnds: Set<string> = new Set();
     private processedShiftStarts: Set<string> = new Set();
 
     constructor(context: any) {
-        this.carsFactory = context.carFactory;
-        this.stopLineFactory = context.stopFactory;
-        this.bufferFactory = context.bufferFactory;
-        this.plantFactory = context.plantFactory;
-        this.oeeFactory = context.oeeFactory;
-        this.mttrmtbfFactory = context.mttrmtbfFactory;
+        this.carService = context.carService;
+        this.stopService = context.stopService;
+        this.bufferService = context.bufferService;
+        this.plantService = context.plantService;
+        this.oeeService = context.oeeService;
+        this.mttrmtbfService = context.mttrmtbfService;
         this.event = context.event;
         this.callbacks = context.callbacks;
     }
@@ -57,7 +58,7 @@ export class SimulationFlow {
     }
 
     private updateStopsLines(): void {
-        const stops = this.stopLineFactory.getStops();
+        const stops = this.stopService.getStops();
         logger().debug(`Checking stops. Total loaded: ${stops.size}`);
 
         stops.forEach(stop => {
@@ -87,38 +88,34 @@ export class SimulationFlow {
 
     private endScheduledStop(stop: IStopLine): void {
         if (stop.station === "ALL") {
-            const stations = this.plantFactory.getStationsOfLine(stop.shop, stop.line);
-            // End the stop in the factory (updates stop status)
-            this.stopLineFactory.endStop(stop.id, this.event.simulatedTimestamp);
-            // Clear isStopped flag for ALL stations in the line
-            // This is needed because endStop only clears stop.station which is "ALL" (not a real station ID)
+            const stations = this.plantService.getStationsOfLine(stop.shop, stop.line);
+            this.stopService.endStop(stop.id, this.event.simulatedTimestamp);
             stations.forEach(station => {
-                this.plantFactory.clearStopStation(station.id);
+                this.plantService.clearStopStation(station.id);
             });
             this.notifyStopEnded(stop);
         } else {
-            this.stopLineFactory.endStop(stop.id, this.event.simulatedTimestamp);
+            this.stopService.endStop(stop.id, this.event.simulatedTimestamp);
             this.notifyStopEnded(stop);
         }
     }
 
     private startScheduledStop(stop: IStopLine): void {
         if (stop.station === "ALL") {
-            const stations = this.plantFactory.getStationsOfLine(stop.shop, stop.line);
+            const stations = this.plantService.getStationsOfLine(stop.shop, stop.line);
             if (stop.type === "RANDOM_GENERATE" && this.shouldRescheduleStop(stations)) {
-                this.stopLineFactory.reescheduleStop(stop.id);
+                this.stopService.reescheduleStop(stop.id);
                 return;
             }
-            this.stopLineFactory.activeStopsInManyStation(String(stop.id), this.event.simulatedTimestamp, stations);
+            this.stopService.activeStopsInManyStation(String(stop.id), this.event.simulatedTimestamp, stations);
             this.notifyStopStarted(stop);
         } else {
-            const station = this.plantFactory.getById("station", stop.station) as IStation;
-            // Only reschedule RANDOM stops if the specific station is busy
+            const station = this.plantService.getById("station", stop.station) as IStation;
             if (stop.type === "RANDOM_GENERATE" && this.shouldRescheduleStop([station])) {
-                this.stopLineFactory.reescheduleStop(stop.id);
+                this.stopService.reescheduleStop(stop.id);
                 return;
             }
-            this.stopLineFactory.activeStopsInManyStation(String(stop.id), this.event.simulatedTimestamp, [station]);
+            this.stopService.activeStopsInManyStation(String(stop.id), this.event.simulatedTimestamp, [station]);
             this.notifyStopStarted(stop);
         }
     }
@@ -140,7 +137,7 @@ export class SimulationFlow {
     }
 
     private moveCarsThroughStations(): void {
-        const stations = Array.from(this.plantFactory.getStations())
+        const stations = Array.from(this.plantService.getStations())
             .map(([_, station]) => station)
             .filter(station => station != null)
             .reverse() as IStation[];
@@ -158,7 +155,7 @@ export class SimulationFlow {
 
             if (stations.indexOf(station) === 0 && station.isLastStation && station.occupied) {
                 const car = station.currentCar as ICar;
-                this.carsFactory.completeCar(car.id, this.event.simulatedTimestamp, station.id);
+                this.carService.completeCar(car.id, this.event.simulatedTimestamp, station.id);
                 const location: StationLocation = { shop: station.shop, line: station.line, station: station.id };
                 if (this.callbacks?.onCarCompleted) {
                     this.callbacks.onCarCompleted(
@@ -196,7 +193,7 @@ export class SimulationFlow {
 
         if (!taktExpired) return;
 
-        const line = this.plantFactory.getById("line", `${station.shop}-${station.line}`) as ILine;
+        const line = this.plantService.getById("line", `${station.shop}-${station.line}`) as ILine;
         if (!line) {
             logger().error(`Line not found for station ${station.line}`);
             return;
@@ -216,7 +213,7 @@ export class SimulationFlow {
             return;
         }
 
-        const nextStation = this.plantFactory.getNextStationId(station.id) as IStation;
+        const nextStation = this.plantService.getNextStationId(station.id) as IStation;
         if (!nextStation) {
             logger().warn(`No next station found for ${station.id}`);
             return;
@@ -238,7 +235,7 @@ export class SimulationFlow {
     }
 
     private isStartStation(station: IStation): boolean {
-        const startStations = this.plantFactory.getStartStations();
+        const startStations = this.plantService.getStartStations();
         const stationNumber = station.id.split('-')[2];
         return startStations.some(s =>
             s.station === stationNumber &&
@@ -274,7 +271,7 @@ export class SimulationFlow {
     }
 
     private startPropagationStop(station: IStation, reason: "NEXT_FULL" | "PREV_EMPTY"): void {
-        this.stopLineFactory.startStop(
+        this.stopService.startStop(
             this.event.simulatedTimestamp,
             station.shop,
             station.line,
@@ -284,11 +281,11 @@ export class SimulationFlow {
             "PROPAGATION"
         );
 
-        const stop = this.stopLineFactory.getActiveStopsAt(this.event.simulatedTimestamp);
+        const stop = this.stopService.getActiveStopsAt(this.event.simulatedTimestamp);
         if (!stop.find(s => s.station == station.id)) {
-                logger().error(`Stop not found with id ${station.id}`);
-                return
-            }
+            logger().error(`Stop not found with id ${station.id}`);
+            return
+        }
         this.notifyStopStarted(stop.find(s => s.station == station.id) as IStopLine);
     }
 
@@ -304,7 +301,6 @@ export class SimulationFlow {
         });
 
         if (!hasEnoughParts) {
-            // Fallback: Se buffer está cheio e não tem peças do modelo, envia para rework
             const shouldFallback = this.shouldSendToReworkForMissingParts(gatheredBuffersData, car.model);
             if (shouldFallback) {
                 const sent = this.sendCarToReworkForMissingParts(station, car);
@@ -316,7 +312,7 @@ export class SimulationFlow {
             return false;
         }
 
-        this.consumePartsFromBuffers(gatheredBuffersData, car.model);
+        this.consumePartsFromBuffers(gatheredBuffersData, car.model, station.id);
         return true;
     }
 
@@ -335,9 +331,9 @@ export class SimulationFlow {
         return gatheredBuffersData;
     }
 
-    private consumePartsFromBuffers(buffersData: Array<{ bufferId: string, counts: Record<string, number> }>, model: string): void {
+    private consumePartsFromBuffers(buffersData: Array<{ bufferId: string, counts: Record<string, number> }>, model: string, stationId: string): void {
         buffersData.forEach(data => {
-            const consumedPart = this.bufferFactory.consumePartByModel(data.bufferId, model);
+            const consumedPart = this.bufferService.consumePartByModel(data.bufferId, model, this.event.simulatedTimestamp, stationId);
             if (consumedPart) {
                 logger().debug(`Consumed part ${consumedPart.id} model ${model} from buffer ${data.bufferId}`);
             }
@@ -348,9 +344,8 @@ export class SimulationFlow {
         buffersData: Array<{ bufferId: string, counts: Record<string, number> }>,
         model: string
     ): boolean {
-        // Verifica se algum buffer de peças está CHEIO e não tem o modelo necessário
         for (const data of buffersData) {
-            const buffer = this.bufferFactory.getBuffer(data.bufferId);
+            const buffer = this.bufferService.getBuffer(data.bufferId);
             if (!buffer) continue;
 
             const hasModelPart = (data.counts[model] || 0) >= 1;
@@ -368,7 +363,7 @@ export class SimulationFlow {
 
     private sendCarToReworkForMissingParts(station: IStation, car: ICar): boolean {
         const reworkBufferId = `${station.shop}-REWORK`;
-        const reworkBuffer = this.bufferFactory.getBuffer(reworkBufferId);
+        const reworkBuffer = this.bufferService.getBuffer(reworkBufferId);
 
         if (!reworkBuffer) {
             logger().error(`[FALLBACK] Rework buffer not found: ${reworkBufferId}`);
@@ -380,37 +375,32 @@ export class SimulationFlow {
             return false;
         }
 
-        // Marcar carro como defeito (para passar pelo fluxo de rework)
         car.hasDefect = true;
         car.inRework = true;
         car.reworkEnteredAt = this.event.simulatedTimestamp;
         car.defects = car.defects || [];
         car.defects.push(`MISSING_PARTS: ${car.model} at ${station.id}`);
 
-        // Atualizar trace e leadtime
-        this.updateCarTraceAndLeadtime(car, station);
-
-        // Adicionar ao buffer de rework
-        const success = this.bufferFactory.addCarToBuffer(reworkBuffer.id, car);
+        const success = this.carService.exitStationToBuffer(
+            car.id,
+            station.id,
+            reworkBuffer.id,
+            this.event.simulatedTimestamp
+        );
         if (!success) {
             logger().error(`[FALLBACK] Failed to add car ${car.id} to rework buffer ${reworkBuffer.id}`);
-            // Reverter estado
             car.hasDefect = false;
             car.inRework = false;
             car.reworkEnteredAt = undefined;
             car.defects.pop();
             return false;
         }
-
-        // Remover da station atual
-        this.plantFactory.removeCarFromStation(station.id);
         this.endPropagationStopsAtStation(station);
 
         logger().info(
             `[FALLBACK] Car ${car.id} (${car.model}) → rework buffer ${reworkBuffer.id} due to missing parts at ${station.id}`
         );
 
-        // Emitir evento de entrada no rework
         if (this.callbacks?.onBufferIn) {
             this.callbacks.onBufferIn(
                 car.id,
@@ -425,14 +415,14 @@ export class SimulationFlow {
     }
 
     private getPartBufferData(line: ILine, partType: string): { bufferId: string, counts: Record<string, number> } | null {
-        const lineThatProducesPart = this.plantFactory.getLineThatProducePartType(line.shop, partType) as ILine;
+        const lineThatProducesPart = this.plantService.getLineThatProducePartType(line.shop, partType) as ILine;
 
         if (!lineThatProducesPart) {
             logger().error(`Line that produces part type ${partType} not found for shop ${line.shop}`);
             return null;
         }
 
-        const bufferPartId = this.bufferFactory.findPartBuffer(
+        const bufferPartId = this.bufferService.findPartBuffer(
             lineThatProducesPart.shop,
             lineThatProducesPart.partType as string
         );
@@ -442,13 +432,13 @@ export class SimulationFlow {
             return null;
         }
 
-        const bufferPart = this.bufferFactory.getBuffer(bufferPartId) as IBuffer;
+        const bufferPart = this.bufferService.getBuffer(bufferPartId) as IBuffer;
         if (!bufferPart) {
             logger().error(`Buffer not found with id ${bufferPartId}`);
             return null;
         }
 
-        const partsInBuffer = this.bufferFactory.getAllCarsByBuffer(bufferPart.id) as ICar[];
+        const partsInBuffer = this.bufferService.getAllCarsByBuffer(bufferPart.id) as ICar[];
         const counts = partsInBuffer.reduce((acc, part) => {
             acc[part.model] = (acc[part.model] || 0) + 1;
             return acc;
@@ -458,8 +448,7 @@ export class SimulationFlow {
     }
 
     private moveCarToStation(currentStation: IStation, nextStation: IStation, car: ICar): void {
-        this.carsFactory.moveCarToNextStation(
-            "",
+        this.carService.moveCarToNextStation(
             car.id,
             currentStation.id,
             nextStation.id,
@@ -472,8 +461,8 @@ export class SimulationFlow {
         if (currentStation.isStopped &&
             (currentStation.stopReason === "NEXT_FULL" || currentStation.stopReason === "PREV_EMPTY") &&
             currentStation.stopId) {
-            this.stopLineFactory.endStop(Number(currentStation.stopId), this.event.simulatedTimestamp);
-            const stop = this.stopLineFactory.getStopById(Number(currentStation.stopId)) as IStopLine;
+            this.stopService.endStop(Number(currentStation.stopId), this.event.simulatedTimestamp);
+            const stop = this.stopService.getStopById(Number(currentStation.stopId)) as IStopLine;
             if (!stop) {
                 logger().error(`Stop not found with id ${currentStation.stopId}`);
                 return
@@ -486,8 +475,8 @@ export class SimulationFlow {
             nextStation.stopReason === "PREV_EMPTY" &&
             !nextStation.isFirstCar &&
             nextStation.stopId) {
-            this.stopLineFactory.endStop(Number(nextStation.stopId), this.event.simulatedTimestamp);
-            const stop = this.stopLineFactory.getStopById(Number(currentStation.stopId)) as IStopLine;
+            this.stopService.endStop(Number(nextStation.stopId), this.event.simulatedTimestamp);
+            const stop = this.stopService.getStopById(Number(currentStation.stopId)) as IStopLine;
             if (!stop) {
                 logger().error(`Stop not found with id ${currentStation.stopId}`);
                 return
@@ -498,7 +487,7 @@ export class SimulationFlow {
     }
 
     private createCarsAndParts(): void {
-        const startStations = this.plantFactory.getStartStations();
+        const startStations = this.plantService.getStartStations();
         if (startStations.length === 0) {
             logger().debug("No start stations found");
             return;
@@ -506,8 +495,8 @@ export class SimulationFlow {
 
         startStations.forEach(startStation => {
             const stationId = `${startStation.shop}-${startStation.line}-${startStation.station}`;
-            const station = this.plantFactory.getById("station", stationId) as IStation;
-            const line = this.plantFactory.getById("line", `${startStation.shop}-${startStation.line}`) as ILine;
+            const station = this.plantService.getById("station", stationId) as IStation;
+            const line = this.plantService.getById("line", `${startStation.shop}-${startStation.line}`) as ILine;
 
             if (!station || !line) {
                 logger().error(`Station or line not found: ${stationId}`);
@@ -555,7 +544,7 @@ export class SimulationFlow {
         }
 
         const selectedModel = approvedModels[0];
-        this.consumePartsFromBuffers(gatheredBuffersData, selectedModel);
+        this.consumePartsFromBuffers(gatheredBuffersData, selectedModel, station.id);
 
         if (line.partType) {
             this.createPart(station, line, selectedModel);
@@ -584,10 +573,10 @@ export class SimulationFlow {
 
     private createCar(station: IStation, model: string | null): void {
         const newCar = model
-            ? this.carsFactory.createCarWithModel(this.event.simulatedTimestamp, model)
-            : this.carsFactory.createRandomCar(this.event.simulatedTimestamp);
+            ? this.carService.createCarWithModel(this.event.simulatedTimestamp, model)
+            : this.carService.createRandomCar(this.event.simulatedTimestamp);
 
-        this.carsFactory.moverCarToFirstStation(newCar.id, station.id, this.event.simulatedTimestamp);
+        this.carService.moverCarToFirstStation(newCar.id, station.id, this.event.simulatedTimestamp);
         logger().debug(`Created car ${model ? `model ${model}` : 'random'} at ${station.id}`);
 
         if (this.callbacks?.onCarCreated) {
@@ -596,13 +585,13 @@ export class SimulationFlow {
     }
 
     private createPart(station: IStation, line: ILine, model: string | null): void {
-        const newPart = this.carsFactory.createPart(
+        const newPart = this.carService.createPart(
             this.event.simulatedTimestamp,
             line.partType as string,
             model as any
         );
 
-        this.carsFactory.moverCarToFirstStation(newPart.id, station.id, this.event.simulatedTimestamp);
+        this.carService.moverCarToFirstStation(newPart.id, station.id, this.event.simulatedTimestamp);
         logger().debug(`Created part ${line.partType} ${model ? `model ${model}` : ''} at ${station.id}`);
 
         if (this.callbacks?.onCarCreated) {
@@ -611,8 +600,8 @@ export class SimulationFlow {
     }
 
     private moveCarsThroughBuffers(): void {
-        const stations = this.plantFactory.getStations();
-        const startStations = this.plantFactory.getStartStations();
+        const stations = this.plantService.getStations();
+        const startStations = this.plantService.getStartStations();
 
         stations.forEach(station => {
             if (this.shouldPullFromBuffer(station, startStations)) {
@@ -648,10 +637,10 @@ export class SimulationFlow {
     private shouldSendToRework(station: IStation, car: ICar): boolean {
         if (!car.hasDefect) return false;
 
-        const line = this.plantFactory.getById("line", `${station.shop}-${station.line}`) as ILine;
+        const line = this.plantService.getById("line", `${station.shop}-${station.line}`) as ILine;
         if (!line) return false;
 
-        const linesOfShop = this.plantFactory.getLinesOfShop(station.shop);
+        const linesOfShop = this.plantService.getLinesOfShop(station.shop);
         const isLastLineOfShop = linesOfShop[linesOfShop.length - 1]?.id === line.id;
 
         return isLastLineOfShop;
@@ -659,7 +648,7 @@ export class SimulationFlow {
 
     private sendCarToRework(station: IStation, car: ICar, normalBuffer: IBuffer): void {
         const reworkBufferId = `${station.shop}-REWORK`;
-        const reworkBuffer = this.bufferFactory.getBuffer(reworkBufferId);
+        const reworkBuffer = this.bufferService.getBuffer(reworkBufferId);
 
         if (!reworkBuffer) {
             this.moveCarFromLastStationToBuffer(station, car, normalBuffer);
@@ -671,15 +660,16 @@ export class SimulationFlow {
             return;
         }
 
-        this.updateCarTraceAndLeadtime(car, station);
-
-        const success = this.bufferFactory.addCarToBuffer(reworkBuffer.id, car);
+        const success = this.carService.exitStationToBuffer(
+            car.id,
+            station.id,
+            reworkBuffer.id,
+            this.event.simulatedTimestamp
+        );
         if (!success) {
             logger().error(`Failed to add car ${car.id} to rework buffer ${reworkBuffer.id}`);
             return;
         }
-
-        this.plantFactory.removeCarFromStation(station.id);
         this.endPropagationStopsAtStation(station);
 
         logger().info(`✓ Car ${car.id} → rework buffer ${reworkBuffer.id} from last station ${station.id}`);
@@ -696,7 +686,7 @@ export class SimulationFlow {
     }
 
     private findBufferForLastStation(station: IStation): IBuffer | undefined {
-        const line = this.plantFactory.getById("line", `${station.shop}-${station.line}`) as ILine;
+        const line = this.plantService.getById("line", `${station.shop}-${station.line}`) as ILine;
         if (!line) {
             logger().error(`Line not found for station ${station.id}`);
             return undefined;
@@ -708,21 +698,21 @@ export class SimulationFlow {
         if (isPartLine && !hasRoutes) {
             if (line.buffers && line.buffers.length > 0) {
                 const destShop = line.buffers[0].to.shop;
-                const partBufferId = this.bufferFactory.findPartBuffer(destShop, line.partType as string);
+                const partBufferId = this.bufferService.findPartBuffer(destShop, line.partType as string);
                 if (!partBufferId) {
                     logger().error(`Part Buffer not found for ${destShop} ${line.partType}`);
                     return undefined;
                 }
-                const partBuffer = this.bufferFactory.getBuffer(partBufferId);
+                const partBuffer = this.bufferService.getBuffer(partBufferId);
                 return partBuffer;
             }
             logger().error(`Part line ${line.id} has no buffer config`);
             return undefined;
         }
 
-        const routeDestination = this.plantFactory.getRouteFromStation(station.id);
+        const routeDestination = this.plantService.getRouteFromStation(station.id);
         if (routeDestination) {
-            const buffer = this.bufferFactory.getBufferByFromTo(
+            const buffer = this.bufferService.getBufferByFromTo(
                 `${station.shop}-${station.line}`,
                 `${routeDestination.shop}-${routeDestination.line}`
             );
@@ -731,18 +721,18 @@ export class SimulationFlow {
             }
         }
 
-        let nextLine = this.plantFactory.getNextLine(station.id) as ILine;
+        let nextLine = this.plantService.getNextLine(station.id) as ILine;
         let buffer: IBuffer | undefined;
 
         if (!nextLine) {
-            const keysShops = this.plantFactory.getShopsKeys();
+            const keysShops = this.plantService.getShopsKeys();
             for (const shop of keysShops) {
                 if (shop === station.shop) continue;
 
-                const linesOfShop = this.plantFactory.getLinesOfShop(shop);
+                const linesOfShop = this.plantService.getLinesOfShop(shop);
                 const firstLineOfShop = linesOfShop[0];
 
-                buffer = this.bufferFactory.getBufferByFromTo(
+                buffer = this.bufferService.getBufferByFromTo(
                     `${station.shop}-${station.line}`,
                     `${shop}-${firstLineOfShop.line}`
                 );
@@ -750,7 +740,7 @@ export class SimulationFlow {
                 if (buffer) break;
             }
         } else {
-            buffer = this.bufferFactory.getBufferByFromTo(
+            buffer = this.bufferService.getBufferByFromTo(
                 `${station.shop}-${station.line}`,
                 `${nextLine.shop}-${nextLine.line}`
             );
@@ -760,15 +750,16 @@ export class SimulationFlow {
     }
 
     private moveCarFromLastStationToBuffer(station: IStation, car: ICar, buffer: IBuffer): void {
-        this.updateCarTraceAndLeadtime(car, station);
-
-        const success = this.bufferFactory.addCarToBuffer(buffer.id, car);
+        const success = this.carService.exitStationToBuffer(
+            car.id,
+            station.id,
+            buffer.id,
+            this.event.simulatedTimestamp
+        );
         if (!success) {
             logger().error(`Failed to add car ${car.id} to buffer ${buffer.id}`);
             return;
         }
-
-        this.plantFactory.removeCarFromStation(station.id);
         this.endPropagationStopsAtStation(station);
 
         logger().info(`✓ Car ${car.id} → buffer ${buffer.id} from last station ${station.id}`);
@@ -784,37 +775,18 @@ export class SimulationFlow {
         }
     }
 
-    private updateCarTraceAndLeadtime(car: ICar, station: IStation): void {
-        const trace = car.trace?.find(t => t.station === station.id);
-        if (trace) {
-            trace.leave = this.event.simulatedTimestamp;
-        }
-
-        const existingShopLeadTime = car.shopLeadtimes.find(t => t.shop === station.shop);
-        if (existingShopLeadTime) {
-            existingShopLeadTime.exitedAt = this.event.simulatedTimestamp;
-            existingShopLeadTime.leadtimeMs = this.event.simulatedTimestamp - (existingShopLeadTime.enteredAt || car.createdAt);
-        }
-
-        const existingLineLeadTime = car.shopLeadtimes.find(t => t.line === station.line);
-        if (existingLineLeadTime && existingLineLeadTime !== existingShopLeadTime) {
-            existingLineLeadTime.exitedAt = this.event.simulatedTimestamp;
-            existingLineLeadTime.leadtimeMs = this.event.simulatedTimestamp - (existingLineLeadTime.enteredAt || car.createdAt);
-        }
-    }
-
     private endPropagationStopsAtStation(station: IStation): void {
         if (station.isStopped &&
             (station.stopReason === "NEXT_FULL" || station.stopReason === "PREV_EMPTY") &&
             station.stopId) {
-            this.stopLineFactory.endStop(Number(station.stopId), this.event.simulatedTimestamp);
+            this.stopService.endStop(Number(station.stopId), this.event.simulatedTimestamp);
             logger().debug(`✓ Ended ${station.stopReason} at ${station.id}`);
         }
     }
 
     private shouldPullFromBuffer(station: IStation, startStations: StationLocation[]): boolean {
         if (!station) return false;
-        const line = this.plantFactory.getById("line", `${station.shop}-${station.line}`) as ILine;
+        const line = this.plantService.getById("line", `${station.shop}-${station.line}`) as ILine;
         if (!line) {
             logger().error(`Line not found for station ${station.id}`);
             return false
@@ -855,12 +827,12 @@ export class SimulationFlow {
         const reworkBufferId = this.getReworkBufferIdForStation(station);
         if (!reworkBufferId) return false;
 
-        const reworkBuffer = this.bufferFactory.getBuffer(reworkBufferId);
+        const reworkBuffer = this.bufferService.getBuffer(reworkBufferId);
         if (!reworkBuffer || reworkBuffer.status === "EMPTY") return false;
 
         if (!this.alternateReworkPull) return false;
 
-        const cars = this.bufferFactory.getAllCarsByBuffer(reworkBuffer.id) as ICar[];
+        const cars = this.bufferService.getAllCarsByBuffer(reworkBuffer.id) as ICar[];
         const readyCar = cars.find(car => this.isCarReadyForReworkExit(car, station));
 
         return !!readyCar;
@@ -890,23 +862,23 @@ export class SimulationFlow {
     }
 
     private findPreviousLineAcrossShops(station: IStation): ILine | null {
-        let prevLine = this.plantFactory.getPrevLine(station.id) as ILine;
+        let prevLine = this.plantService.getPrevLine(station.id) as ILine;
 
         if (!prevLine) {
-            const keysShops = this.plantFactory.getShopsKeys();
+            const keysShops = this.plantService.getShopsKeys();
             for (const shop of keysShops) {
                 if (shop === station.shop) continue;
 
-                const linesOfShop = this.plantFactory.getLinesOfShop(shop);
+                const linesOfShop = this.plantService.getLinesOfShop(shop);
                 const lastLineOfShop = linesOfShop[linesOfShop.length - 1];
 
-                const buffer = this.bufferFactory.getBufferByFromTo(
+                const buffer = this.bufferService.getBufferByFromTo(
                     `${shop}-${lastLineOfShop.line}`,
                     `${station.shop}-${station.line}`
                 );
 
                 if (buffer) {
-                    prevLine = this.plantFactory.getById("line", `${shop}-${lastLineOfShop.line}`) as ILine;
+                    prevLine = this.plantService.getById("line", `${shop}-${lastLineOfShop.line}`) as ILine;
                     break;
                 }
             }
@@ -922,13 +894,13 @@ export class SimulationFlow {
             return;
         }
 
-        const reworkBuffer = this.bufferFactory.getBuffer(reworkBufferId);
+        const reworkBuffer = this.bufferService.getBuffer(reworkBufferId);
         if (!reworkBuffer) {
             this.pullFromNormalBuffer(station, normalBuffer);
             return;
         }
 
-        const cars = this.bufferFactory.getAllCarsByBuffer(reworkBuffer.id) as ICar[];
+        const cars = this.bufferService.getAllCarsByBuffer(reworkBuffer.id) as ICar[];
         const readyCar = cars.find(car => this.isCarReadyForReworkExit(car, station));
 
         if (!readyCar) {
@@ -937,14 +909,18 @@ export class SimulationFlow {
             return;
         }
 
-        const car = this.bufferFactory.removeCarFromBuffer(reworkBuffer.id, readyCar.id);
+        const car = this.carService.enterStationFromBuffer(
+            reworkBuffer.id,
+            readyCar.id,
+            station.id,
+            this.event.simulatedTimestamp
+        );
         if (!car) {
             this.alternateReworkPull = !this.alternateReworkPull;
             this.pullFromNormalBuffer(station, normalBuffer);
             return;
         }
 
-        this.carsFactory.moverCarToFirstStation(car.id, station.id, this.event.simulatedTimestamp);
         this.alternateReworkPull = !this.alternateReworkPull;
 
         logger().info(`✓ Car ${car.id} → station ${station.id} from rework buffer ${reworkBuffer.id}`);
@@ -960,13 +936,16 @@ export class SimulationFlow {
     }
 
     private pullFromNormalBuffer(station: IStation, buffer: IBuffer): void {
-        const car = this.bufferFactory.removeFirstCarFromBuffer(buffer.id);
+        const car = this.carService.enterStationFromBuffer(
+            buffer.id,
+            null,
+            station.id,
+            this.event.simulatedTimestamp
+        );
         if (!car) {
             logger().debug(`No car available in buffer ${buffer.id} for station ${station.id}`);
             return;
         }
-
-        this.carsFactory.moverCarToFirstStation(car.id, station.id, this.event.simulatedTimestamp);
 
         if (this.isCrossShopBuffer(buffer, station)) {
             this.alternateReworkPull = !this.alternateReworkPull;
@@ -985,14 +964,14 @@ export class SimulationFlow {
     }
 
     private findBufferForFirstStation(station: IStation): IBuffer | undefined {
-        const currentLine = this.plantFactory.getById("line", `${station.shop}-${station.line}`) as ILine;
+        const currentLine = this.plantService.getById("line", `${station.shop}-${station.line}`) as ILine;
         if (!currentLine) {
             logger().debug(`Current line not found for station ${station.id}`);
             return undefined;
         }
 
         const stationNumber = station.id.split('-')[2]; // Extract station number from id
-        const sourceLines = this.plantFactory.getLinesThatRouteToStation(
+        const sourceLines = this.plantService.getLinesThatRouteToStation(
             station.shop,
             station.line,
             stationNumber
@@ -1000,7 +979,7 @@ export class SimulationFlow {
 
         if (sourceLines.length > 0) {
             const sourceLine = sourceLines[0]; // Use first matching source line
-            const buffer = this.bufferFactory.getBufferByFromTo(
+            const buffer = this.bufferService.getBufferByFromTo(
                 `${sourceLine.shop}-${sourceLine.line}`,
                 `${station.shop}-${station.line}`
             );
@@ -1009,29 +988,29 @@ export class SimulationFlow {
             }
         }
 
-        let prevLine = this.plantFactory.getPrevLine(station.id) as ILine;
+        let prevLine = this.plantService.getPrevLine(station.id) as ILine;
         let buffer: IBuffer | undefined;
 
         if (!prevLine) {
-            const keysShops = this.plantFactory.getShopsKeys();
+            const keysShops = this.plantService.getShopsKeys();
             for (const shop of keysShops) {
                 if (shop === station.shop) continue;
 
-                const linesOfShop = this.plantFactory.getLinesOfShop(shop);
+                const linesOfShop = this.plantService.getLinesOfShop(shop);
                 const lastLineOfShop = linesOfShop[linesOfShop.length - 1];
 
-                buffer = this.bufferFactory.getBufferByFromTo(
+                buffer = this.bufferService.getBufferByFromTo(
                     `${shop}-${lastLineOfShop.line}`,
                     `${station.shop}-${station.line}`
                 );
 
                 if (buffer) {
-                    prevLine = this.plantFactory.getById("line", `${shop}-${lastLineOfShop.line}`) as ILine;
+                    prevLine = this.plantService.getById("line", `${shop}-${lastLineOfShop.line}`) as ILine;
                     break;
                 }
             }
         } else {
-            buffer = this.bufferFactory.getBufferByFromTo(
+            buffer = this.bufferService.getBufferByFromTo(
                 `${prevLine.shop}-${prevLine.line}`,
                 `${station.shop}-${station.line}`
             );
@@ -1052,20 +1031,16 @@ export class SimulationFlow {
     }
 
     private calculateOEE(isShiftEnd: boolean): void {
-        const lines = Array.from(this.plantFactory.getLines());
-        const shops = Array.from(this.plantFactory.getShops());
-        const cars = Array.from(this.carsFactory.getAllCars().values());
+        const lines = Array.from(this.plantService.getLines());
+        const shops = Array.from(this.plantService.getShops());
 
-        // Calcular production time por shop (média das linhas do shop)
         const productionTimeByShop = new Map<string, { total: number; count: number }>();
 
-        // Calcular OEE por linha
         for (const [_, line] of lines) {
             const productionTimeMinutes = line.productionTimeMinutes ?? 0;
             const lastStation = line.stations[line.stations.length - 1];
-            const shop = this.plantFactory.getById("shop", line.shop) as IShop;
+            const shop = this.plantService.getById("shop", line.shop) as IShop;
 
-            // Acumular para média do shop
             const shopData = productionTimeByShop.get(line.shop) || { total: 0, count: 0 };
             shopData.total += productionTimeMinutes;
             shopData.count += 1;
@@ -1076,29 +1051,26 @@ export class SimulationFlow {
                 line: line,
                 productionTimeMinutes: productionTimeMinutes,
                 taktTimeMinutes: line.taktMn,
-                cars: cars,
                 simulatedTimestamp: this.event.simulatedTimestamp,
                 shiftStart: line.takt.shiftStart,
                 shiftEnd: line.takt.shiftEnd,
                 lastStationId: lastStation?.id ?? ""
             };
 
-            const lineOEE: OEEData = this.oeeFactory.calculateLineOEE(lineInput, true);
+            const lineOEE: OEEData = this.oeeService.calculateLineOEE(lineInput, true);
             this.callbacks?.onOEECalculated(lineOEE);
             if (isShiftEnd) {
                 this.callbacks?.onOEEShiftEnd(lineOEE);
             }
         }
 
-        // Calcular OEE por shop (usando média do production time das linhas)
         for (const [_, shop] of shops) {
-            const shopLines = this.plantFactory.getLinesOfShop(shop.name);
+            const shopLines = this.plantService.getLinesOfShop(shop.name);
             if (shopLines.length === 0) continue;
 
             const shopData = productionTimeByShop.get(shop.name);
             const avgProductionTime = shopData ? shopData.total / shopData.count : 0;
 
-            // Pegar takt médio das linhas do shop
             let totalTaktMn = 0;
             let firstLine: ILine | null = null;
             for (const line of shopLines) {
@@ -1112,14 +1084,13 @@ export class SimulationFlow {
                 line: "ALL",
                 productionTimeMinutes: avgProductionTime,
                 taktTimeMinutes: avgTaktMn,
-                cars: cars,
                 simulatedTimestamp: this.event.simulatedTimestamp,
                 shiftStart: firstLine?.takt.shiftStart ?? "07:00",
                 shiftEnd: firstLine?.takt.shiftEnd ?? "23:48",
                 lastStationId: ""
             };
 
-            const shopOEE: OEEData = this.oeeFactory.calculateShopOEE(shopInput, true);
+            const shopOEE: OEEData = this.oeeService.calculateShopOEE(shopInput, true);
             this.callbacks?.onOEECalculated(shopOEE);
             if (isShiftEnd) {
                 this.callbacks?.onOEEShiftEnd(shopOEE);
@@ -1128,14 +1099,12 @@ export class SimulationFlow {
     }
 
     private calculateMTTRMTBF(): void {
-        const lines = Array.from(this.plantFactory.getLines());
-        const shops = Array.from(this.plantFactory.getShops());
-        const allStops = Array.from(this.stopLineFactory.getStops().values());
+        const lines = Array.from(this.plantService.getLines());
+        const shops = Array.from(this.plantService.getShops());
+        const allStops = Array.from(this.stopService.getStops().values());
 
-        // Armazenar resultados por shop para agregação
         const shopResults = new Map<string, MTTRMTBFData[]>();
 
-        // Calcular MTTR/MTBF por station de cada linha
         for (const [_, line] of lines) {
             const productionTimeMinutes = line.productionTimeMinutes ?? 0;
             const stationMTTRMTBFData: MTTRMTBFData[] = [];
@@ -1150,32 +1119,29 @@ export class SimulationFlow {
                     simulatedTimestamp: this.event.simulatedTimestamp
                 };
 
-                const stationData: MTTRMTBFData = this.mttrmtbfFactory.calculateStationMTTRMTBF(stationInput);
+                const stationData: MTTRMTBFData = this.mttrmtbfService.calculateStationMTTRMTBF(stationInput);
                 stationMTTRMTBFData.push(stationData);
             }
 
-            // Calcular MTTR/MTBF da linha agregando stations
-            const lineMTTRMTBF = this.mttrmtbfFactory.calculateLineMTTRMTBF(stationMTTRMTBFData, productionTimeMinutes);
+            const lineMTTRMTBF = this.mttrmtbfService.calculateLineMTTRMTBF(stationMTTRMTBFData, productionTimeMinutes);
             if (lineMTTRMTBF) {
-                // Armazenar para agregação por shop
                 const shopLineData = shopResults.get(line.shop) || [];
                 shopLineData.push(lineMTTRMTBF);
                 shopResults.set(line.shop, shopLineData);
             }
         }
 
-        // Calcular MTTR/MTBF por shop agregando linhas
         for (const [_, shop] of shops) {
             const shopLineData = shopResults.get(shop.name);
             if (!shopLineData || shopLineData.length === 0) continue;
 
-            const shopMTTRMTBF = this.mttrmtbfFactory.calculateShopMTTRMTBF(shopLineData);
+            const shopMTTRMTBF = this.mttrmtbfService.calculateShopMTTRMTBF(shopLineData);
         }
     }
 
 
     private checkProductionDayEnd(): void {
-        const lines = Array.from(this.plantFactory.getLines());
+        const lines = Array.from(this.plantService.getLines());
 
         const simulatedDate = new Date(this.event.simulatedTimestamp);
         const todayBaseTimestamp = Date.UTC(
@@ -1211,8 +1177,8 @@ export class SimulationFlow {
             if (shiftStartPassedInRange && !this.processedShiftStarts.has(shiftStartKey)) {
                 this.processedShiftStarts.add(shiftStartKey);
                 logger().info(`Shift start detected for line ${line.id} at ${new Date(shiftStartTimestamp).toISOString()}`);
-                this.stopLineFactory.resetAndStart();
-                this.carsFactory.cleanCarsCompleted();
+                this.stopService.resetAndStart();
+                this.carService.cleanCarsCompleted();
             }
         }
 

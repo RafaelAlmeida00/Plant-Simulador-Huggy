@@ -2,28 +2,36 @@
 
 import { logger } from "../../utils/logger";
 import { ICar, ILine, IShop, OEECalculationInput, OEEData } from "../../utils/shared";
-import { CarFactory } from "./carFactory";
-import { PlantFactory } from "./plantFactory";
+import { CarService } from "../services/CarService";
+import { PlantService } from "../services/PlantService";
 
 export class OEEFactory {
 
-    private carsFactory: CarFactory;
-    private plantFactory: PlantFactory;
+    private carsService: CarService | null = null;
+    private plantService: PlantService | null = null;
 
-    constructor(plantFactory?: PlantFactory, carsFactory?: CarFactory) {
-        this.plantFactory = plantFactory as PlantFactory;
-        this.carsFactory = carsFactory as CarFactory;
+    public setPlantService(plantService: PlantService): void {
+        this.plantService = plantService;
+    }
+
+    public setCarService(carsService: CarService): void {
+        this.carsService = carsService;
     }
 
     public calculateLineOEE(input: OEECalculationInput, isDynamic: boolean): OEEData {
+        if (!this.carsService) {
+            throw new Error('OEEFactory: CarFactory not injected. Call setCarFactory() first.');
+        }
+
         const simDate = new Date(input.simulatedTimestamp);
+
         const dateStr = simDate.toISOString().split('T')[0];
         const dayStart = Date.UTC(simDate.getUTCFullYear(), simDate.getUTCMonth(), simDate.getUTCDate(), 0, 0, 0, 0);
         const [startHour, startMinute] = input.shiftStart.split(':').map(Number);
         const shiftStartTs = dayStart + (startHour * 60 + startMinute) * 60 * 1000;
 
         const line: ILine = input.line as ILine;
-        const carsProduction = this.carsFactory.getCompletedCardByLineCount(line.id)
+        const carsProduction = this.carsService.getCompletedCardByLineCount(line)
 
         const productionTime = input.productionTimeMinutes;
         const taktTime = input.taktTimeMinutes;
@@ -57,6 +65,13 @@ export class OEEFactory {
     }
 
     public calculateShopOEE(input: OEECalculationInput, isDynamic: boolean): OEEData {
+        if (!this.carsService) {
+            throw new Error('OEEFactory: CarFactory not injected. Call setCarFactory() first.');
+        }
+        if (!this.plantService) {
+            throw new Error('OEEFactory: plantService not injected. Call setplantService() first.');
+        }
+
         const simDate = new Date(input.simulatedTimestamp);
         const dateStr = simDate.toISOString().split('T')[0];
         const dayStart = Date.UTC(simDate.getUTCFullYear(), simDate.getUTCMonth(), simDate.getUTCDate(), 0, 0, 0, 0);
@@ -64,7 +79,13 @@ export class OEEFactory {
         const shiftStartTs = dayStart + (startHour * 60 + startMinute) * 60 * 1000;
 
         const shop: IShop = input.shop as IShop;
-        const carsProduction = this.carsFactory.getCompletedCardByShopCount(shop.name)
+        const shopLines = this.plantService.getLinesOfShop(shop.name);
+        const numLines = shopLines.length;
+        const totalCarsProduction = this.carsService.getCompletedCardByShopCount(shop);
+
+        // Para shop com linhas paralelas: dividir carsProduction pelo número de linhas
+        // para obter média por linha, já que productionTime é a MÉDIA das linhas
+        const carsProduction = totalCarsProduction / numLines;
 
         const productionTime = input.productionTimeMinutes;
         const taktTime = input.taktTimeMinutes;
@@ -79,9 +100,9 @@ export class OEEFactory {
 
         let jph;
         if (isDynamic) {
-            jph = carsProduction / ((input.simulatedTimestamp - shiftStartTs) / 3600000); // carros por hora
+            jph = totalCarsProduction / ((input.simulatedTimestamp - shiftStartTs) / 3600000); // carros por hora (total da shop)
         } else {
-            jph = carsProduction / (productionTime / 60); // carros por hora
+            jph = totalCarsProduction / (productionTime / 60); // carros por hora (total da shop)
         }
 
         return {
@@ -89,7 +110,7 @@ export class OEEFactory {
             shop: input.shop,
             line: input.line,
             productionTime,
-            carsProduction,
+            carsProduction: totalCarsProduction,  // Retornar total para referência, mas OEE usa média
             taktTime,
             diffTime,
             oee: Math.round(oee * 100) / 100,  // Arredonda para 2 casas decimais
@@ -98,7 +119,11 @@ export class OEEFactory {
     }
 
     public calculateOEE(input: OEECalculationInput, isDynamic: boolean): OEEData {
-        const shops = this.plantFactory.getShopsKeys();
+        if (!this.plantService) {
+            throw new Error('OEEFactory: plantService not injected. Call setplantService() first.');
+        }
+
+        const shops = this.plantService.getShopsKeys();
         const simDate = new Date(input.simulatedTimestamp);
         const dateStr = simDate.toISOString().split('T')[0];
         let results: OEEData = {
@@ -115,7 +140,7 @@ export class OEEFactory {
         for (let i = 0; i < shops.length; i++) {
             let inputParsed: OEECalculationInput = {
                 ...input, // Copia as propriedades de input
-                shop: this.plantFactory.getById("shop", shops[i]) as IShop,
+                shop: this.plantService.getById("shop", shops[i]) as IShop,
                 line: "ALL"
             };
 

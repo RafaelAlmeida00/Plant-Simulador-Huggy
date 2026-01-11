@@ -80,7 +80,10 @@ export async function StartSimulation() {
             });
 
             // Plantstate a cada tick
-            void simulationEventEmitter.emitPlantState(simulation.getPlantSnapshot());
+            const plantSnapshot = simulation.getPlantSnapshot();
+            if (plantSnapshot) {
+                void simulationEventEmitter.emitPlantState(plantSnapshot);
+            }
         },
         onCars: (cars, timestamp) => {
             simulationEventEmitter.emitCars(cars, timestamp);
