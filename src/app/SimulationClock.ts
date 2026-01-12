@@ -289,24 +289,15 @@ export class SimulationClock implements ISimulationClock {
     this._currentSimulatedTime += deltaMs;
     this._simulatedTimestamp += deltaMs;
 
-    const now = new Date();
-    const utc = Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      now.getUTCDate(),
-      now.getUTCHours(),
-      now.getUTCMinutes(),
-      now.getUTCSeconds(),
-      now.getUTCMilliseconds()
-    );
+    const now = Date.now();
 
     this.tickEvent.tickNumber = this._currentTick;
     this.tickEvent.simulatedTimeMs = this._currentSimulatedTime;
     this.tickEvent.simulatedTimestamp = this._simulatedTimestamp;
     this.tickEvent.simulatedTimeString = this.getSimulatedTimeString();
-    this.tickEvent.realTimeMs = utc - this._startRealTime - this._totalPausedTime;
+    this.tickEvent.realTimeMs = now - this._startRealTime - this._totalPausedTime;
     this.tickEvent.deltaMs = deltaMs;
-    this.tickEvent.realTimestamp = utc;
+    this.tickEvent.realTimestamp = now;
 
     this.emitter.emit("tick", this.tickEvent);
   }
