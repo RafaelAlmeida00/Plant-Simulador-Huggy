@@ -33,7 +33,7 @@ export class StopLineService {
         this.stopLineFactory.stopIdCounter = value;
     }
 
-    public startStop(timeStart: number, shopName: string, lineName: string, stationId: string, reason: string, type: StopType, category: StopCategory): void {
+    public startStop(timeStart: number, shopName: string, lineName: string, stationId: string, reason: string, type: StopType, category: StopCategory): IStopLine {
         const stopLine = new StopLine({
             id: ++this.stopIdCounter,
             shop: shopName,
@@ -48,6 +48,7 @@ export class StopLineService {
         });
         this.stopsMap.set(stopLine.id.toString(), stopLine);
         this.plantService.setStopStation(stopLine.id, stationId, stopLine);
+        return stopLine;
     }
 
     public activeStopsInManyStation(stopId: string, timeMs: number, stations: IStation[]): void {

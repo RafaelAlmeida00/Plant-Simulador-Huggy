@@ -269,7 +269,7 @@ export class SimulationFlow {
     }
 
     private startPropagationStop(station: IStation, reason: "NEXT_FULL" | "PREV_EMPTY"): void {
-        this.stopService.startStop(
+        const stop = this.stopService.startStop(
             this.event.simulatedTimestamp,
             station.shop,
             station.line,
@@ -278,13 +278,7 @@ export class SimulationFlow {
             "PROPAGATION",
             "PROPAGATION"
         );
-
-        const stop = this.stopService.getActiveStopsAt(this.event.simulatedTimestamp);
-        if (!stop.find(s => s.station == station.id)) {
-            logger().error(`Stop not found with id ${station.id}`);
-            return
-        }
-        this.notifyStopStarted(stop.find(s => s.station == station.id) as IStopLine);
+        this.notifyStopStarted(stop);
     }
 
     private checkAndConsumeRequiredParts(station: IStation, line: ILine, car: ICar): boolean {
