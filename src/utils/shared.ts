@@ -381,3 +381,50 @@ export interface TimeRangeResult<T> {
   truncated: boolean;
   total?: number;
 }
+
+// ============================================
+// WEBSOCKET OPTIMIZATION TYPES
+// ============================================
+
+/**
+ * Delta operation for incremental updates
+ * Used to send only changes instead of full state
+ */
+export interface DeltaOperation {
+  op: 'ADD' | 'UPDATE' | 'REMOVE';
+  path: string;
+  id: string;
+  data?: any;
+}
+
+/**
+ * Information about a chunk in a chunked payload
+ */
+export interface ChunkInfo {
+  chunkId: string;
+  chunkIndex: number;
+  totalChunks: number;
+  isLast: boolean;
+}
+
+/**
+ * Optimized socket message format with delta and chunking support
+ */
+export interface OptimizedSocketMessage {
+  type: 'FULL' | 'DELTA';
+  channel: string;
+  version: number;
+  baseVersion?: number;
+  data: any;
+  timestamp: number;
+  chunkInfo?: ChunkInfo;
+  requiresAck: boolean;
+}
+
+/**
+ * Acknowledgment payload sent by client to confirm message receipt
+ */
+export interface AckPayload {
+  channel: string;
+  version: number;
+}

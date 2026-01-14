@@ -2,9 +2,13 @@
 
 import { Server as HttpServer } from 'http';
 import { Server as SocketIOServer, Socket } from 'socket.io';
-import { ICar,IStopLine,IBuffer } from '../../../utils/shared';
+import msgpackParser from 'socket.io-msgpack-parser';
+import { ICar, IStopLine, IBuffer, IShop, ILine, IStation, PlantSnapshot } from '../../../utils/shared';
 import { SimulationClock } from '../../../app/SimulationClock';
 import { DatabaseFactory } from '../../database/DatabaseFactory';
+import { DeltaService, DeltaResult } from './DeltaService';
+import { BackpressureManager, AckPayload } from './BackpressureManager';
+import { ChunkingService } from './ChunkingService';
 
 export type SimulatorAction = 'pause' | 'restart' | 'stop' | 'start';
 
@@ -35,6 +39,18 @@ export class SocketServer {
     // Performance: Car state hashes for delta updates
     private carStateHashes: Map<string, string> = new Map();
 
+    // Delta tracking service for efficient updates
+    private deltaService: DeltaService = new DeltaService();
+
+    // Backpressure management for flow control
+    private backpressureManager: BackpressureManager = new BackpressureManager();
+
+    // Chunking service for large payloads
+    private chunkingService: ChunkingService = new ChunkingService();
+
+    // Flag to enable/disable delta mode (can be toggled)
+    private deltaEnabled: boolean = true;
+
     private constructor() {}
 
     public static getInstance(): SocketServer {
@@ -56,9 +72,16 @@ export class SocketServer {
                 methods: ['GET', 'POST']
             },
             path: '/socket.io',
+            // Performance: Use MessagePack for binary serialization (~30% smaller payloads)
+            parser: msgpackParser,
+            // Connection stability: Configure ping/pong intervals for reliable connections
+            pingInterval: 30000,      // 30s between pings (default: 25s)
+            pingTimeout: 60000,       // 60s timeout before disconnect (default: 20s)
+            upgradeTimeout: 30000,    // 30s for transport upgrade
+            maxHttpBufferSize: 1e6,   // 1MB max buffer size
             // Performance: Enable WebSocket compression for large payloads
             perMessageDeflate: {
-                threshold: 5120,  // Only compress messages > 5KB
+                threshold: 2048,  // Lower threshold since MessagePack is already compact
                 zlibDeflateOptions: { level: 6 },
                 zlibInflateOptions: { chunkSize: 16 * 1024 }
             },
@@ -66,17 +89,105 @@ export class SocketServer {
         });
 
         this.setupConnectionHandlers();
+        this.setupEngineErrorHandlers();
         return this.io;
+    }
+
+    private setupEngineErrorHandlers(): void {
+        if (!this.io) return;
+
+        const engine = this.io.engine;
+
+        console.log('[SOCKET ENGINE] Setting up engine-level event handlers...');
+        console.log(`[SOCKET ENGINE] Config: pingInterval=${30000}ms, pingTimeout=${60000}ms`);
+
+        // Handle engine-level connection errors (before socket is established)
+        engine.on('connection_error', (err: { req: any; code: number; message: string; context: any }) => {
+            console.error(`[SOCKET ENGINE] Connection error: code=${err.code}, message=${err.message}`);
+        });
+
+        // Log when a new raw connection is initiated
+        engine.on('connection', (rawSocket: any) => {
+            const socketId = rawSocket.id;
+            console.log(`[SOCKET ENGINE] Raw connection initiated: ${socketId}`);
+            console.log(`[SOCKET ENGINE] Transport: ${rawSocket.transport?.name || 'unknown'}`);
+
+            // Monitor transport changes (polling -> websocket upgrade)
+            rawSocket.on('upgrade', (transport: any) => {
+                console.log(`[SOCKET ENGINE] Transport upgraded: ${socketId} -> ${transport.name}`);
+            });
+
+            // Monitor upgrade errors
+            rawSocket.on('upgradeError', (err: Error) => {
+                console.error(`[SOCKET ENGINE] Upgrade error for ${socketId}:`, err.message);
+            });
+
+            // Monitor packet events for debugging
+            rawSocket.on('packet', (packet: any) => {
+                if (packet.type === 'ping') {
+                    console.log(`[SOCKET ENGINE] Ping sent to ${socketId}`);
+                } else if (packet.type === 'pong') {
+                    console.log(`[SOCKET ENGINE] Pong received from ${socketId}`);
+                }
+            });
+
+            // Monitor heartbeat events
+            rawSocket.on('heartbeat', () => {
+                console.log(`[SOCKET ENGINE] Heartbeat for ${socketId}`);
+            });
+
+            // Monitor drain events (buffer flushed)
+            rawSocket.on('drain', () => {
+                console.log(`[SOCKET ENGINE] Buffer drained for ${socketId}`);
+            });
+
+            // Monitor packetCreate for debugging outgoing packets
+            rawSocket.on('packetCreate', (packet: any) => {
+                if (packet.type !== 'ping' && packet.type !== 'pong') {
+                    console.log(`[SOCKET ENGINE] Packet created for ${socketId}: type=${packet.type}`);
+                }
+            });
+
+            // Monitor close at engine level
+            rawSocket.on('close', (reason: string, description: any) => {
+                console.error(`[SOCKET ENGINE] Raw socket closed: ${socketId}, reason=${reason}, description=${JSON.stringify(description)}`);
+            });
+
+            // Monitor errors at engine level
+            rawSocket.on('error', (err: Error) => {
+                console.error(`[SOCKET ENGINE] Raw socket error for ${socketId}:`, err.message);
+            });
+        });
+
+        // Monitor initial handshake
+        engine.on('initial_headers', (_headers: any, req: any) => {
+            console.log(`[SOCKET ENGINE] Initial headers sent for request from ${req.socket?.remoteAddress || 'unknown'}`);
+        });
+
+        // Monitor headers
+        engine.on('headers', (_headers: any, req: any) => {
+            console.log(`[SOCKET ENGINE] Headers event for ${req.url}`);
+        });
     }
 
     private setupConnectionHandlers(): void {
         if (!this.io) return;
 
         this.io.on('connection', (socket: Socket) => {
+            const conn = socket.conn;
+            console.log(`[SOCKET] ========== NEW CONNECTION ==========`);
             console.log(`[SOCKET] Client connected: ${socket.id}`);
+            console.log(`[SOCKET] Transport: ${conn?.transport?.name || 'unknown'}`);
+            console.log(`[SOCKET] Remote address: ${socket.handshake?.address || 'unknown'}`);
+            console.log(`[SOCKET] Query params: ${JSON.stringify(socket.handshake?.query || {})}`);
+            console.log(`[SOCKET] Headers origin: ${socket.handshake?.headers?.origin || 'unknown'}`);
+            console.log(`[SOCKET] =====================================`);
 
             // Performance: Initialize subscription tracking for this socket
             this.socketSubscriptions.set(socket.id, new Set());
+
+            // Register client in backpressure manager
+            this.backpressureManager.registerClient(socket.id);
 
             // Permitir que clientes se inscrevam em canais específicos
             socket.on('subscribe', (channel: string) => {
@@ -88,6 +199,12 @@ export class SocketServer {
                 // Track subscription for cleanup
                 const subs = this.socketSubscriptions.get(socket.id);
                 if (subs) subs.add(channel);
+
+                // Track in backpressure manager
+                this.backpressureManager.subscribe(socket.id, channel);
+
+                // Reset delta state for this socket/channel (force full update on subscribe)
+                this.deltaService.resetSocketChannel(`${channel}:${socket.id}`);
 
                 console.log(`[SOCKET] Client ${socket.id} subscribed to ${channel}`);
 
@@ -105,7 +222,15 @@ export class SocketServer {
                 const subs = this.socketSubscriptions.get(socket.id);
                 if (subs) subs.delete(channel);
 
+                // Remove from backpressure manager
+                this.backpressureManager.unsubscribe(socket.id, channel);
+
                 console.log(`[SOCKET] Client ${socket.id} unsubscribed from ${channel}`);
+            });
+
+            // Handler for client acknowledgments (backpressure)
+            socket.on('ack', (ack: AckPayload) => {
+                this.backpressureManager.handleAck(socket.id, ack);
             });
 
             // Handler para controle da simulação via WebSocket
@@ -113,16 +238,31 @@ export class SocketServer {
                 void this.handleSimulatorControl(socket, message);
             });
 
-            socket.on('disconnect', () => {
+            // Error handler for debugging connection issues
+            socket.on('error', (error: Error) => {
+                console.error(`[SOCKET] Error for ${socket.id}:`, error.message);
+            });
+
+            socket.on('disconnect', (reason: string) => {
+                // Log disconnect reason with detailed explanation
+                console.log(`[SOCKET] ========== DISCONNECT ==========`);
+                console.log(`[SOCKET] Client disconnected: ${socket.id}`);
+                console.log(`[SOCKET] Reason: ${reason}`);
+                console.log(`[SOCKET] Reason explanation: ${this.getDisconnectReasonExplanation(reason)}`);
+                console.log(`[SOCKET] ===================================`);
+
                 // Performance: Explicit cleanup on disconnect to prevent memory leaks
                 const subs = this.socketSubscriptions.get(socket.id);
                 if (subs) {
                     subs.forEach(channel => socket.leave(channel));
                 }
                 this.socketSubscriptions.delete(socket.id);
-                socket.removeAllListeners();
 
-                console.log(`[SOCKET] Client disconnected: ${socket.id}`);
+                // Cleanup backpressure and delta state
+                this.backpressureManager.unregisterClient(socket.id);
+                this.deltaService.clearSocket(socket.id);
+
+                socket.removeAllListeners();
             });
         });
     }
@@ -292,6 +432,7 @@ export class SocketServer {
     }
 
     // Emite estado de todos os stops
+    // Uses optimized delta emission for bandwidth reduction
     public emitAllStops(stops: Map<string, IStopLine>): void {
         if (!this.io) return;
 
@@ -313,14 +454,11 @@ export class SocketServer {
             });
         }
 
-        const payload: SocketEventData = {
+        // Use optimized emission with delta tracking
+        this.emitOptimized('stops', { activeStops: stopsArray }, {
             type: 'STOPS_STATE',
-            data: stopsArray,
-            timestamp: Date.now()
-        };
-
-        this.cacheState('stops', payload);
-        this.io.to('stops').emit('stops', payload);
+            computeDelta: (channelKey, data) => this.deltaService.computeStopsDelta(channelKey, data)
+        });
     }
 
     // Emite estado do buffer
@@ -353,6 +491,7 @@ export class SocketServer {
     }
 
     // Emite estado de todos os buffers
+    // Uses optimized delta emission for bandwidth reduction
     public emitAllBuffers(buffers: Map<string, IBuffer>): void {
         if (!this.io) return;
 
@@ -371,29 +510,26 @@ export class SocketServer {
             });
         }
 
-        const payload: SocketEventData = {
+        // Use optimized emission with delta tracking
+        this.emitOptimized('buffers', buffersArray, {
             type: 'BUFFERS_STATE',
-            data: buffersArray,
-            timestamp: Date.now()
-        };
-
-        this.cacheState('buffers', payload);
-        this.io.to('buffers').emit('buffers', payload);
+            computeDelta: (channelKey, data) => this.deltaService.computeBuffersDelta(channelKey, data)
+        });
     }
 
-    // Emite estado completo da planta
-    public emitPlantState(snapshot: any): void {
+    // Emite estado completo da planta (sanitizado - sem trace/shopLeadtimes)
+    // Uses optimized delta emission for bandwidth reduction
+    public emitPlantState(snapshot: PlantSnapshot): void {
         if (!this.io) return;
 
-        const payload: SocketEventData = {
-            type: 'PLANT_STATE',
-            data: snapshot,
-            timestamp: Date.now()
-        };
+        // Sanitize snapshot to remove heavy trace/shopLeadtimes from nested cars
+        const sanitizedSnapshot = this.sanitizePlantSnapshot(snapshot);
 
-        this.cacheState('plantstate', payload);
-        this.io.to('plantstate').emit('plantstate', payload);
-        // Note: Legacy alias 'plant_state' removed for performance (was duplicating messages)
+        // Use optimized emission with delta tracking
+        this.emitOptimized('plantstate', sanitizedSnapshot, {
+            type: 'PLANT_STATE',
+            computeDelta: (channelKey, data) => this.deltaService.computePlantStateDelta(channelKey, data)
+        });
     }
 
     // Emite health check
@@ -415,6 +551,122 @@ export class SocketServer {
 
         this.cacheState('health', payload);
         this.io.to('health').emit('health', payload);
+    }
+
+    /**
+     * Optimized emission with delta tracking, backpressure, and chunking support
+     * Emits only changes to each socket individually
+     */
+    private emitOptimized(
+        channel: string,
+        rawData: any,
+        options: {
+            type: string;
+            computeDelta: (channelKey: string, data: any) => DeltaResult;
+        }
+    ): void {
+        if (!this.io) return;
+
+        const room = this.io.sockets.adapter.rooms.get(channel);
+        if (!room || room.size === 0) {
+            // No subscribers, just cache the state
+            const payload: SocketEventData = {
+                type: options.type,
+                data: rawData,
+                timestamp: Date.now()
+            };
+            this.cacheState(channel, payload);
+            return;
+        }
+
+        // Process each subscribed socket individually
+        for (const socketId of room) {
+            const socket = this.io.sockets.sockets.get(socketId);
+            if (!socket) continue;
+
+            // Check backpressure - skip if client hasn't acknowledged previous message
+            if (!this.backpressureManager.canEmit(socketId, channel)) {
+                continue;
+            }
+
+            // Compute delta for this socket
+            const channelKey = `${channel}:${socketId}`;
+            const deltaResult = this.deltaEnabled
+                ? options.computeDelta(channelKey, rawData)
+                : { hasChanges: true, operations: [], delta: rawData, version: 0, isFullUpdate: true };
+
+            // Skip if no changes
+            if (!deltaResult.hasChanges) continue;
+
+            // Build payload - use hierarchical delta format
+            let payload: any;
+            if (deltaResult.isFullUpdate) {
+                payload = {
+                    type: 'FULL',
+                    channel,
+                    version: deltaResult.version,
+                    data: rawData,
+                    timestamp: Date.now(),
+                    requiresAck: true
+                };
+            } else {
+                // Send only changed fields in hierarchical format
+                payload = {
+                    type: 'DELTA',
+                    channel,
+                    version: deltaResult.version,
+                    baseVersion: deltaResult.version - 1,
+                    data: deltaResult.delta,  // Hierarchical delta with only changed fields
+                    timestamp: Date.now(),
+                    requiresAck: true
+                };
+            }
+
+            // Check if chunking is needed
+            if (this.chunkingService.shouldChunk(payload.data)) {
+                // Chunk by logical boundaries for plantstate
+                if (channel === 'plantstate' && payload.data.shops) {
+                    const chunks = this.chunkingService.chunkPlantSnapshot(payload.data);
+                    for (const chunk of chunks) {
+                        socket.emit(`${channel}:chunk`, {
+                            ...payload,
+                            data: chunk.data,
+                            chunkInfo: chunk.chunkInfo
+                        });
+                    }
+                } else {
+                    // Fallback to byte chunking for large deltas
+                    const chunks = this.chunkingService.chunkByBytes(payload.data);
+                    for (const chunk of chunks) {
+                        socket.emit(`${channel}:chunk`, {
+                            ...payload,
+                            data: chunk.data,
+                            chunkInfo: chunk.chunkInfo
+                        });
+                    }
+                }
+            } else {
+                // Mark as pending and emit
+                this.backpressureManager.markPending(socketId, channel);
+                socket.emit(channel, payload);
+            }
+        }
+
+        // Update global cache for new clients
+        const cachePayload: SocketEventData = {
+            type: options.type,
+            data: rawData,
+            timestamp: Date.now()
+        };
+        this.cacheState(channel, cachePayload);
+    }
+
+    /**
+     * Toggle delta mode on/off
+     */
+    public setDeltaEnabled(enabled: boolean): void {
+        this.deltaEnabled = enabled;
+        console.log(`[SOCKET] Delta mode ${enabled ? 'enabled' : 'disabled'}`);
     }
 
     /**
@@ -446,8 +698,85 @@ export class SocketServer {
     }
 
     /**
+     * Sanitize PlantSnapshot removing trace[] and shopLeadtimes[] from all nested cars
+     * This reduces payload size significantly for plantstate emissions
+     */
+    private sanitizePlantSnapshot(snapshot: PlantSnapshot): object {
+        return {
+            timestamp: snapshot.timestamp,
+            totalStations: snapshot.totalStations,
+            totalOccupied: snapshot.totalOccupied,
+            totalFree: snapshot.totalFree,
+            totalStopped: snapshot.totalStopped,
+            shops: snapshot.shops.map(shop => this.sanitizeShop(shop))
+        };
+    }
+
+    /**
+     * Sanitize shop object, converting lines Map to array and sanitizing stations
+     */
+    private sanitizeShop(shop: IShop): object {
+        const lines: object[] = [];
+
+        // Handle both Map and Record types for lines
+        const linesIterable = shop.lines instanceof Map
+            ? shop.lines.entries()
+            : Object.entries(shop.lines || {});
+
+        for (const [, line] of linesIterable) {
+            lines.push(this.sanitizeLine(line as ILine));
+        }
+
+        return {
+            name: shop.name,
+            bufferCapacity: shop.bufferCapacity,
+            reworkBuffer: shop.reworkBuffer,
+            lines
+        };
+    }
+
+    /**
+     * Sanitize line object, sanitizing all stations within
+     */
+    private sanitizeLine(line: ILine): object {
+        return {
+            id: line.id,
+            shop: line.shop,
+            line: line.line,
+            taktMn: line.taktMn,
+            isFeederLine: line.isFeederLine,
+            partType: line.partType,
+            stations: (line.stations || []).map(station => this.sanitizeStation(station))
+        };
+    }
+
+    /**
+     * Sanitize station object, removing trace/shopLeadtimes from currentCar
+     */
+    private sanitizeStation(station: IStation): object {
+        return {
+            id: station.id,
+            index: station.index,
+            shop: station.shop,
+            line: station.line,
+            station: station.station,
+            taktMn: station.taktMn,
+            taktSg: station.taktSg,
+            isFirstStation: station.isFirstStation,
+            isLastStation: station.isLastStation,
+            occupied: station.occupied,
+            isStopped: station.isStopped,
+            stopReason: station.stopReason,
+            stopId: station.stopId,
+            currentCar: station.currentCar
+                ? this.serializeCarMinimal(station.currentCar)
+                : null
+        };
+    }
+
+    /**
      * Emits optimized car state with minimal payload (no full traces)
-     * Use emitCarsFull() if you need complete trace data
+     * Uses delta tracking to only send changed cars
      */
     public emitCars(cars: ICar[]): void {
         if (!this.io) return;
@@ -455,25 +784,27 @@ export class SocketServer {
         // Performance: Serialize cars without full trace for reduced bandwidth
         const minimalCars = cars.map(car => this.serializeCarMinimal(car));
 
-        const payload: SocketEventData = {
+        // Use optimized emission with delta tracking
+        this.emitOptimized('cars', minimalCars, {
             type: 'CARS_STATE',
-            data: minimalCars,
-            timestamp: Date.now()
-        };
-
-        this.cacheState('cars', payload);
-        this.io.to('cars').emit('cars', payload);
+            computeDelta: (channelKey, data) => this.deltaService.computeCarsDelta(channelKey, data)
+        });
     }
 
     /**
-     * Emits full car state including complete traces (use sparingly - large payload)
+     * Emits car state (now also sanitized - trace/shopLeadtimes removed for bandwidth)
+     * @deprecated Use emitCars() instead - this method now returns same minimal payload
      */
     public emitCarsFull(cars: ICar[]): void {
         if (!this.io) return;
 
+        // Performance: Serialize cars without full trace for reduced bandwidth
+        // trace[] and shopLeadtimes[] are removed to save ~30KB per car
+        const minimalCars = cars.map(car => this.serializeCarMinimal(car));
+
         const payload: SocketEventData = {
             type: 'CARS_STATE_FULL',
-            data: cars,
+            data: minimalCars,
             timestamp: Date.now()
         };
 
@@ -541,6 +872,24 @@ export class SocketServer {
 
         this.cacheState('stops', payload);
         this.io.to('stops').emit('stops', payload);
+    }
+
+    /**
+     * Returns a human-readable explanation for disconnect reasons
+     */
+    private getDisconnectReasonExplanation(reason: string): string {
+        const explanations: Record<string, string> = {
+            'transport close': 'The connection was closed (browser tab closed, network issue, or server restart)',
+            'transport error': 'Transport error occurred (network failure or proxy issue)',
+            'ping timeout': 'Client did not respond to ping in time (network latency or client frozen)',
+            'server namespace disconnect': 'Server manually disconnected the socket',
+            'client namespace disconnect': 'Client manually disconnected',
+            'server shutting down': 'Server is shutting down',
+            'forced close': 'Connection forcefully closed',
+            'forced server close': 'Server forced the connection to close',
+            'parse error': 'Invalid packet received from client'
+        };
+        return explanations[reason] || `Unknown reason: ${reason}`;
     }
 
     public close(): void {

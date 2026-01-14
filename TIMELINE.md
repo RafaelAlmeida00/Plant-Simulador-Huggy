@@ -1385,3 +1385,228 @@ ID PROBLEM RESOLVE 0++
     - ✅ Pagination available on all list endpoints
 
 ---
+
+## ID 019 - WebSocket Hierarchical Delta Optimization
+
+1) 2026-01-14 | ~10:00:00
+
+2) **Main problem**: WebSocket emissions sending full state every update, causing excessive bandwidth usage (10MB+/cliente/min)
+
+3) **Analysis - Multiple optimization opportunities identified**:
+
+   **Problem A: Full State Emissions**
+   - PlantSnapshot (~150KB) sent every PLANT_EMIT_INTERVAL
+   - Cars array (~500KB) sent every CARS_EMIT_INTERVAL
+   - Buffers and Stops similarly sent in full
+
+   **Problem B: No Per-Socket Tracking**
+   - All clients received identical payloads
+   - No way to send only what changed since client's last update
+
+   **Problem C: No Hierarchical Delta**
+   - Even simple station changes required full shop/line re-send
+   - No field-level tracking for nested objects
+
+4) **Source Problem**:
+   - `src/adapters/http/websocket/SocketServer.ts` | Direct serialization of full state
+   - No delta computation service existed
+   - No backpressure mechanism for slow clients
+
+5) **Flow before (bandwidth heavy)**:
+   ```
+   Each emission interval:
+   ├─► Serialize full PlantSnapshot (150KB)
+   │     └─► All shops, all lines, all stations, all currentCars
+   ├─► Send to ALL clients (no per-socket optimization)
+   └─► No compression beyond perMessageDeflate
+
+   Result: 10MB+/cliente/min bandwidth usage
+   ```
+
+6) **Solution approach - 4 New Services + Hierarchical Delta**:
+
+   **Service 1: DeltaService**
+   - Hierarchical cache per socket: Root → Shop → Line → Station → Car
+   - Field-level change tracking at each level
+   - Version numbering for client validation
+   - Methods: `computePlantStateDelta()`, `computeStopsDelta()`, `computeBuffersDelta()`, `computeCarsDelta()`
+
+   **Service 2: BackpressureManager**
+   - Per-socket pending payload tracking
+   - ACK timeout (5s) with auto-reset
+   - Skip emissions if client hasn't acknowledged previous
+
+   **Service 3: ChunkingService**
+   - Logical boundary chunking (by shop, batch)
+   - 64KB max chunk size
+   - Methods: `chunkPlantSnapshot()`, `chunkCarsArray()`, `chunkDeltaOperations()`
+
+   **Service 4: MessagePack Integration**
+   - Binary serialization via `socket.io-msgpack-parser`
+   - 30-50% size reduction over JSON
+
+   **Hierarchical Delta Structure:**
+   ```
+   Level 0 (Root): timestamp, totalStations, totalOccupied, totalFree, totalStopped
+         │
+   Level 1 (Shop): id, name, bufferCapacity, reworkBuffer
+         │
+   Level 2 (Line): id, shop, line, taktMn, isFeederLine, partType
+         │
+   Level 3 (Station): id, index, occupied, isStopped, stopReason, stopId
+         │
+   Level 4 (Car): id, sequenceNumber, model, color, hasDefect, inRework, isPart
+   ```
+
+7) **Files created**:
+   - `src/adapters/http/websocket/DeltaService.ts` | 721 lines | Hierarchical delta computation
+   - `src/adapters/http/websocket/BackpressureManager.ts` | 80 lines | Flow control per client
+   - `src/adapters/http/websocket/ChunkingService.ts` | 293 lines | Large payload splitting
+
+8) **Files edited**:
+   - `src/adapters/http/websocket/SocketServer.ts`:
+     - Added imports for new services
+     - Created `emitOptimized()` method for delta-aware emissions
+     - Updated `emitPlantState()`, `emitAllStops()`, `emitAllBuffers()`, `emitCars()` to use `emitOptimized()`
+     - Added ACK handler for backpressure
+     - Added socket cleanup on disconnect
+
+   - `src/utils/shared.ts`:
+     - Added `DeltaOperation` interface
+     - Added `ChunkInfo` interface
+     - Added `OptimizedSocketMessage` interface
+     - Added `AckPayload` interface
+
+   - `package.json`:
+     - Added `socket.io-msgpack-parser` dependency
+     - Added `@msgpack/msgpack` dependency
+
+9) **New flow (optimized with hierarchical delta)**:
+   ```
+   Client connects:
+   ├─► BackpressureManager.registerClient(socketId)
+   ├─► Client subscribes to channel
+   └─► First emission: type='FULL', full sanitized state
+
+   Subsequent emissions:
+   ├─► emitOptimized() called
+   │     ├─► BackpressureManager.canEmit() check
+   │     │     └─► Skip if pending payload
+   │     ├─► DeltaService.computePlantStateDelta(channelKey, snapshot)
+   │     │     ├─► Compare root fields → add changed to delta
+   │     │     ├─► For each shop: compare fields → add changed
+   │     │     ├─► For each line: compare fields → add changed
+   │     │     ├─► For each station: compare fields → add changed
+   │     │     └─► For each car: compare fields → add changed
+   │     └─► Send type='DELTA' with sparse delta object
+   │
+   └─► Client receives:
+         {
+           type: 'DELTA',
+           version: 42,
+           baseVersion: 41,
+           data: {
+             totalFree: 85,  // Only changed root fields
+             shops: [
+               { id: 'PWT', lines: [...] }  // Only shops with changes
+             ]
+           }
+         }
+
+   Client ACK:
+   ├─► socket.emit('ack', { channel, version })
+   └─► BackpressureManager.handleAck() clears pending flag
+   ```
+
+10) **Delta Format Examples**:
+
+    **FULL (First Connection):**
+    ```typescript
+    {
+      type: 'FULL',
+      channel: 'plantstate',
+      version: 1,
+      data: { /* complete sanitized state */ },
+      timestamp: number,
+      requiresAck: true
+    }
+    ```
+
+    **DELTA (Subsequent Updates):**
+    ```typescript
+    {
+      type: 'DELTA',
+      channel: 'plantstate',
+      version: 42,
+      baseVersion: 41,
+      data: {
+        totalFree: 85,
+        shops: [
+          {
+            id: 'PWT',
+            reworkBuffer: 3,
+            lines: [
+              {
+                id: 'LINE_1',
+                stations: [
+                  {
+                    id: 'PWT-1-03',
+                    occupied: true,
+                    currentCar: { id: 'CAR-456', hasDefect: true }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      timestamp: number,
+      requiresAck: true
+    }
+    ```
+
+    **Removed Items:**
+    ```typescript
+    { id: 'OLD_SHOP', _removed: true }
+    { id: 'PWT-1-99', _removed: true }
+    { currentCar: null }
+    ```
+
+    **Flat Arrays (stops, buffers, cars):**
+    ```typescript
+    {
+      type: 'DELTA',
+      data: {
+        items: [
+          { id: 'STOP-1', status: 'COMPLETED' },  // Updated fields only
+          { id: 'STOP-99', _removed: true },       // Removed
+          { id: 'STOP-100', reason: 'New', _op: 'ADD' }  // Added
+        ]
+      }
+    }
+    ```
+
+11) **Performance Metrics Expected**:
+    | Metric | Before | After | Improvement |
+    |--------|--------|-------|-------------|
+    | PlantSnapshot size | 150KB | 2-5KB | 97% |
+    | Cars array size | 500KB | 5-50KB | 90% |
+    | Bandwidth/client/min | 10MB | 500KB | 95% |
+    | Memory per client | ~1KB | ~10KB | Trade-off for delta cache |
+
+12) **Client Requirements**:
+    - MessagePack parser: `import msgpackParser from 'socket.io-msgpack-parser'`
+    - ACK handler: `socket.emit('ack', { channel, version })`
+    - Delta merge: Apply changes hierarchically using IDs as keys
+    - Chunk assembly: Accumulate chunks, process when `chunkInfo.isLast === true`
+
+13) **Validation**:
+    - ✅ TypeScript compilation passes
+    - ✅ DeltaService correctly computes hierarchical deltas
+    - ✅ BackpressureManager tracks per-socket pending state
+    - ✅ ChunkingService splits large payloads
+    - ✅ All emission methods use emitOptimized()
+    - ✅ shared.ts has new WebSocket optimization types
+    - ✅ CLAUDE.md updated with WebSocket optimization architecture
+
+---

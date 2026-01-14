@@ -620,13 +620,88 @@ interface IStopLine {
 | Channel | Direction | Description |
 |---------|-----------|-------------|
 | `events` | Server → Client | Car creation/movement/completion |
-| `stops` | Server → Client | Stop started/ended |
-| `buffers` | Server → Client | Buffer state changes |
-| `plantstate` | Server → Client | Overall plant snapshot |
+| `stops` | Server → Client | Stop started/ended (delta optimized) |
+| `buffers` | Server → Client | Buffer state changes (delta optimized) |
+| `plantstate` | Server → Client | Overall plant snapshot (delta optimized) |
 | `health` | Server → Client | Server + simulator status |
-| `cars` | Server → Client | Current car positions |
+| `cars` | Server → Client | Current car positions (delta optimized) |
 | `oee` | Server → Client | OEE calculations (throttled) |
 | `controlSimulator` | Client → Server | pause, start, restart, stop |
+| `ack` | Client → Server | Acknowledge message receipt (backpressure) |
+| `{channel}:chunk` | Server → Client | Chunked payload for large messages |
+
+---
+
+## WebSocket Optimization Architecture
+
+### Services (src/adapters/http/websocket/)
+
+| Service | Purpose |
+|---------|---------|
+| `DeltaService` | Hierarchical delta computation per socket - tracks changes at every nesting level |
+| `BackpressureManager` | Flow control - prevents overwhelming slow clients with ack/timeout mechanism |
+| `ChunkingService` | Splits large payloads (>64KB) into logical chunks (by shop, batch, or bytes) |
+
+### Message Protocol
+
+**First Connection (FULL):**
+```typescript
+{
+  type: 'FULL',
+  channel: 'plantstate',
+  version: 1,
+  data: { /* complete state */ },
+  timestamp: number,
+  requiresAck: true
+}
+```
+
+**Subsequent Updates (DELTA):**
+```typescript
+{
+  type: 'DELTA',
+  channel: 'plantstate',
+  version: 42,
+  baseVersion: 41,
+  data: {
+    totalFree: 85,  // Only changed root fields
+    shops: [
+      {
+        id: 'PWT',           // ID always included
+        reworkBuffer: 3,     // Only changed shop fields
+        lines: [
+          {
+            id: 'LINE_1',    // ID always included
+            stations: [
+              {
+                id: 'PWT-1-03',
+                occupied: true,
+                currentCar: { id: 'CAR-456', hasDefect: true }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  timestamp: number,
+  requiresAck: true
+}
+```
+
+**Removed Items:**
+```typescript
+{ id: 'OLD_SHOP', _removed: true }  // Shop removed
+{ id: 'PWT-1-99', _removed: true }  // Station removed
+{ currentCar: null }                 // Car left station
+```
+
+### Client Requirements
+
+1. **MessagePack Parser**: `import msgpackParser from 'socket.io-msgpack-parser'`
+2. **Ack Handler**: `socket.emit('ack', { channel, version })`
+3. **Delta Merge**: Apply changes hierarchically using IDs as keys
+4. **Chunk Assembly**: Accumulate chunks, process when `chunkInfo.isLast === true`
 
 ---
 
@@ -664,4 +739,4 @@ DB_TYPE=sqlite npm run dev
 
 * If you are a IA or is a IA Claude Model by Anthropic, update this file always that you make a edit and get new informations about the project, change the architeture, logic and rules of the simulator. Read and do the command on file TIMELINE.md. Also, update the data change below:
 
-*Last updated: 2026-01-12 00:30:00*
+*Last updated: 2026-01-14 10:00:00*
