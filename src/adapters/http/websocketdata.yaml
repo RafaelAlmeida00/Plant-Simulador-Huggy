@@ -1,0 +1,1381 @@
+asyncapi: 3.0.0
+info:
+  title: Plant Simulador WebSocket API
+  version: 1.1.0
+  description: >
+    API de comunicação em tempo real via WebSocket (socket.io) para o
+    Plant-Simulador.
+
+    Permite o front end receber atualizações instantâneas de eventos, estados,
+    notificações e enviar comandos de simulação.
+
+
+    ## Performance Features
+
+    - **perMessageDeflate Compression**: Mensagens > 5KB são comprimidas automaticamente (zlib level 6)
+
+    - **Delta Updates**: Apenas mudanças são enviadas (não estado completo)
+
+    - **Throttled Emissions**: Buffers 5s, Cars 10s, PlantState 10s
+
+    - **Connection Cleanup**: Listeners são removidos automaticamente no disconnect
+servers:
+  production:
+    host: 'localhost:3000'
+    protocol: socket.io
+    description: WebSocket server para comunicação em tempo real
+
+x-socketio:
+  subscribeEvent: subscribe
+  unsubscribeEvent: unsubscribe
+
+  rooms:
+    events:
+      emits: ["events", "car_event"]
+      hasLegacyAliases: true
+      legacyEmits: ["car_event"]
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            example: "CAR_EVENT"
+          data:
+            type: object
+            properties:
+              carId:
+                type: string
+              eventType:
+                type: string
+                enum: ["CREATED", "MOVED", "COMPLETED", "REWORK_IN", "REWORK_OUT", "BUFFER_IN", "BUFFER_OUT"]
+              shop:
+                type: string
+              line:
+                type: string
+              station:
+                type: string
+              timestamp:
+                type: number
+              data:
+                type: object
+                description: "campo opcional com dados adicionais específicos do evento (any)"
+            required: ["carId", "eventType", "shop", "line", "station", "timestamp"]
+          timestamp:
+            type: number
+        required: ["type", "data", "timestamp"]
+
+    stops:
+      emits: ["stops", "stop_event"]
+      hasLegacyAliases: true
+      legacyEmits: ["stop_event"]
+      variants:
+        stop_event:
+          payload:
+            type: object
+            properties:
+              type:
+                type: string
+                example: "STOP_EVENT"
+              data:
+                type: object
+                properties:
+                  action:
+                    type: string
+                    enum: ["STARTED", "ENDED", "UPDATED"]
+                  stop:
+                    type: object
+                    properties:
+                      id: { type: number }
+                      shop: { type: string }
+                      line: { type: string }
+                      station: { type: string }
+                      reason: { type: string }
+                      severity:
+                        type: string
+                        enum: ["LOW", "MEDIUM", "HIGH", "PLANNED", null]
+                        nullable: true
+                      type:
+                        type: string
+                        enum: ["MICRO", "RANDOM_GENERATE", "PROPAGATION", "PLANNED"]
+                      category:
+                        type: string
+                        enum: ["NEXT_FULL", "PREV_EMPTY", "PROCESS_QUALITY_FAILURE", "PLANNED_STOP", "SHIFT_CHANGE", "NIGHT_STOP", "LUNCH", "MEETING"]
+                      startTime: { type: number }
+                      endTime: { type: number }
+                      status:
+                        type: string
+                        enum: ["PLANNED", "IN_PROGRESS", "COMPLETED"]
+                      durationMs: { type: number }
+                required: ["action", "stop"]
+              timestamp: { type: number }
+            required: ["type", "data", "timestamp"]
+
+        stops_state:
+          payload:
+            type: object
+            properties:
+              type:
+                type: string
+                example: "STOPS_STATE"
+              data:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: number }
+                    shop: { type: string }
+                    line: { type: string }
+                    station: { type: string }
+                    reason: { type: string }
+                    severity:
+                      type: string
+                      enum: ["LOW", "MEDIUM", "HIGH", "PLANNED", null]
+                      nullable: true
+                    type:
+                      type: string
+                      enum: ["MICRO", "RANDOM_GENERATE", "PROPAGATION", "PLANNED"]
+                    status:
+                      type: string
+                      enum: ["PLANNED", "IN_PROGRESS", "COMPLETED"]
+                    startTime: { type: number }
+                    endTime: { type: number }
+              timestamp: { type: number }
+
+        stops_state_detailed:
+          payload:
+            type: object
+            properties:
+              type:
+                type: string
+                example: "STOPS_STATE_DETAILED"
+              data:
+                type: object
+                properties:
+                  activeStops:
+                    type: array
+                    description: Lista de paradas ativas na simulação
+                    items:
+                      type: object
+                      properties:
+                        id: { type: number }
+                        shop: { type: string }
+                        line: { type: string }
+                        station: { type: string }
+                        reason: { type: string }
+                        severity:
+                          type: string
+                          enum: ["LOW", "MEDIUM", "HIGH", "PLANNED", null]
+                          nullable: true
+                        type:
+                          type: string
+                          enum: ["MICRO", "RANDOM_GENERATE", "PROPAGATION", "PLANNED"]
+                        category:
+                          type: string
+                          enum: ["NEXT_FULL", "PREV_EMPTY", "PROCESS_QUALITY_FAILURE", "PLANNED_STOP", "SHIFT_CHANGE", "NIGHT_STOP", "LUNCH", "MEETING"]
+                        status:
+                          type: string
+                          enum: ["PLANNED", "IN_PROGRESS", "COMPLETED"]
+                        startTime: { type: number }
+                        endTime: { type: number }
+                        durationMs: { type: number }
+                  plannedStops:
+                    type: array
+                    description: Lista de paradas planejadas configuradas no flowPlant
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        type: { type: string }
+                        reason: { type: string }
+                        affectsShops:
+                          type: array
+                          items: { type: string }
+                        startTime: { type: string }
+                        durationMn: { type: integer }
+                        daysOfWeek:
+                          type: array
+                          items: { type: integer }
+                  randomStops:
+                    type: array
+                    description: Lista de paradas aleatórias geradas no início do turno
+                    items:
+                      type: object
+                      properties:
+                        id: { type: number }
+                        shop: { type: string }
+                        line: { type: string }
+                        station: { type: string }
+                        reason: { type: string }
+                        severity:
+                          type: string
+                          enum: ["LOW", "MEDIUM", "HIGH", "PLANNED", null]
+                          nullable: true
+                        type:
+                          type: string
+                          enum: ["MICRO", "RANDOM_GENERATE", "PROPAGATION", "PLANNED"]
+                        category:
+                          type: string
+                          enum: ["NEXT_FULL", "PREV_EMPTY", "PROCESS_QUALITY_FAILURE", "PLANNED_STOP", "SHIFT_CHANGE", "NIGHT_STOP", "LUNCH", "MEETING"]
+                        status:
+                          type: string
+                          enum: ["PLANNED", "IN_PROGRESS", "COMPLETED"]
+                        startTime: { type: number }
+                        endTime: { type: number }
+                        durationMs: { type: number }
+              timestamp: { type: number }
+            required: ["type", "data", "timestamp"]
+
+    buffers:
+      emits: ["buffers", "buffer_event"]
+      hasLegacyAliases: true
+      legacyEmits: ["buffer_event"]
+      variants:
+        buffer_event:
+          payload:
+            type: object
+            properties:
+              type:
+                type: string
+                example: "BUFFER_EVENT"
+              data:
+                type: object
+                properties:
+                  action:
+                    type: string
+                    enum: ["UPDATED"]
+                  buffer:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      from: { type: string }
+                      to: { type: string }
+                      capacity: { type: number }
+                      currentCount: { type: number }
+                      status:
+                        type: string
+                        enum: ["EMPTY", "AVAILABLE", "FULL"]
+                      type:
+                        type: string
+                        enum: ["BUFFER", "REWORK_BUFFER"]
+                      carIds:
+                        type: array
+                        items: { type: string }
+                required: ["action", "buffer"]
+              timestamp: { type: number }
+            required: ["type", "data", "timestamp"]
+
+        buffers_state:
+          payload:
+            type: object
+            properties:
+              type:
+                type: string
+                example: "BUFFERS_STATE"
+              data:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    from: { type: string }
+                    to: { type: string }
+                    capacity: { type: number }
+                    currentCount: { type: number }
+                    status:
+                      type: string
+                      enum: ["EMPTY", "AVAILABLE", "FULL"]
+                    type:
+                      type: string
+                      enum: ["BUFFER", "REWORK_BUFFER"]
+                    carIds:
+                      type: array
+                      items: { type: string }
+              timestamp: { type: number }
+            required: ["type", "data", "timestamp"]
+
+    plantstate:
+      emits: ["plantstate", "plant_state"]
+      hasLegacyAliases: true
+      legacyEmits: ["plant_state"]
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            example: "PLANT_STATE"
+          data:
+            type: object
+            description: "snapshot completo da planta"
+            properties:
+              shops:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    _linesArray:
+                      type: string
+                      nullable: true
+                    name: { type: string }
+                    bufferCapacity: { type: number }
+                    reworkBuffer: { type: number }
+                    lines: { type: object }
+              buffers:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    from: { type: string }
+                    to: { type: string }
+                    capacity: { type: number }
+                    currentCount: { type: number }
+                    status:
+                      type: string
+                      enum: ["EMPTY", "AVAILABLE", "FULL"]
+                    type:
+                      type: string
+                      enum: ["BUFFER", "REWORK_BUFFER"]
+                    carIds:
+                      type: array
+                      items: { type: string }
+              cars:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    sequenceNumber: { type: number }
+                    model: { type: string }
+                    color:
+                      type: array
+                      items: { type: string }
+                    createdAt: { type: number }
+                    completedAt:
+                      type: number
+                      nullable: true
+              stops:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: number }
+                    shop: { type: string }
+                    line: { type: string }
+                    station: { type: string }
+                    reason: { type: string }
+                    type: { type: string }
+                    status: { type: string }
+                    startTime: { type: number }
+                    endTime: { type: number }
+              simulationTime: { type: number }
+              simulationTimeString: { type: string }
+          timestamp:
+            type: number
+        required: ["type", "data", "timestamp"]
+
+    health:
+      emits: ["health"]
+      hasLegacyAliases: false
+      legacyEmits: []
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            example: "HEALTH"
+          data:
+            type: object
+            properties:
+              serverStatus:
+                type: string
+                enum: ["healthy", "unhealthy"]
+              simulatorStatus:
+                type: string
+                enum: ["running", "stopped", "paused"]
+              timestamp: { type: number }
+              simulatorTimestamp: { type: number }
+              simulatorTimeString: { type: string }
+              uptime: { type: number }
+          timestamp:
+            type: number
+        required: ["type", "data", "timestamp"]
+
+    cars:
+      emits: ["cars"]
+      hasLegacyAliases: false
+      legacyEmits: []
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            example: "CARS_STATE"
+          data:
+            type: array
+            items:
+              type: object
+              description: "estrutura completa do Car (serializada)"
+              additionalProperties: true
+              properties:
+                id: { type: string }
+                sequenceNumber: { type: number }
+                model: { type: string }
+                color:
+                  type: array
+                  items: { type: string }
+                createdAt: { type: number }
+                completedAt:
+                  type: number
+                  nullable: true
+                metadata:
+                  type: object
+                  nullable: true
+                  additionalProperties: true
+                trace:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      shop: { type: string }
+                      line: { type: string }
+                      station: { type: string }
+                      enter: { type: number }
+                      leave:
+                        type: number
+                        nullable: true
+                hasDefect: { type: boolean }
+                defects:
+                  type: array
+                  items: { type: string }
+                inRework: { type: boolean }
+                reworkEnteredAt:
+                  type: number
+                  nullable: true
+                reworkCompletedAt:
+                  type: number
+                  nullable: true
+                shopLeadtimes:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      shop: { type: string }
+                      enteredAt: { type: number }
+                      exitedAt:
+                        type: number
+                        nullable: true
+                      leadtimeMs:
+                        type: number
+                        nullable: true
+                totalLeadtimeMs:
+                  type: number
+                  nullable: true
+          timestamp:
+            type: number
+        required: ["type", "data", "timestamp"]
+
+    oee:
+      emits: ["oee"]
+      hasLegacyAliases: false
+      legacyEmits: []
+      description: "Atualizações dinâmicas de OEE calculadas a cada movimentação de carro quando há mudança na produção"
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            example: "OEE_UPDATE"
+          data:
+            type: array
+            description: Lista de OEE por linha
+            items:
+              type: object
+              properties:
+                date:
+                  type: string
+                  description: Data no formato YYYY-MM-DD
+                  example: "2026-01-01"
+                shop:
+                  type: string
+                  description: Nome do shop
+                  example: "BODY_SHOP"
+                line:
+                  type: string
+                  description: Nome da linha ou ALL para agregação por shop
+                  example: "LINE_1"
+                productionTime:
+                  type: number
+                  description: Tempo de produção em minutos
+                  example: 480
+                carsProduction:
+                  type: integer
+                  description: Quantidade de carros produzidos
+                  example: 120
+                taktTime:
+                  type: number
+                  description: Takt time em minutos
+                  example: 4
+                diffTime:
+                  type: number
+                  description: Diferença em minutos (productionTime - taktTime * carsProduction)
+                  example: 0
+                oee:
+                  type: number
+                  description: OEE em percentual (0-100)
+                  example: 100
+              required: ["date", "shop", "line", "productionTime", "carsProduction", "taktTime", "diffTime", "oee"]
+          timestamp:
+            type: number
+        required: ["type", "data", "timestamp"]
+
+    mttr_mtbf:
+      emits: ["mttr_mtbf"]
+      hasLegacyAliases: false
+      legacyEmits: []
+      description: "Métricas MTTR (Mean Time To Repair) e MTBF (Mean Time Between Failures) calculadas ao final de cada turno"
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            example: "MTTR_MTBF_UPDATE"
+          data:
+            type: array
+            description: Lista de MTTR/MTBF por station, linha e shop
+            items:
+              type: object
+              properties:
+                date:
+                  type: string
+                  description: Data no formato YYYY-MM-DD
+                  example: "2026-01-01"
+                shop:
+                  type: string
+                  description: Nome do shop
+                  example: "BODY_SHOP"
+                line:
+                  type: string
+                  description: Nome da linha ou ALL para agregação por shop
+                  example: "LINE_1"
+                station:
+                  type: string
+                  description: Nome da station ou ALL para agregação por linha/shop
+                  example: "STATION_1"
+                mttr:
+                  type: number
+                  description: Mean Time To Repair em minutos
+                  example: 15.5
+                mtbf:
+                  type: number
+                  description: Mean Time Between Failures em minutos
+                  example: 120.3
+              required: ["date", "shop", "line", "station", "mttr", "mtbf"]
+          timestamp:
+            type: number
+        required: ["type", "data", "timestamp"]
+
+channels:
+  plantUpdate:
+    address: plantUpdate
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/PlantUpdate'
+    description: 'Atualizações do estado global da planta (buffers, paradas, produção, etc)'
+
+  eventCreated:
+    address: eventCreated
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/EventCreated'
+    description: Notificação de novo evento criado
+
+  stopStarted:
+    address: stopStarted
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/StopStarted'
+    description: Notificação de início de parada
+
+  stopEnded:
+    address: stopEnded
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/StopEnded'
+    description: Notificação de término de parada
+
+  events:
+    address: events
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/CarEvent'
+    description: Room para eventos de carros (movimentações, criação, conclusão, rework, buffer)
+
+  stops:
+    address: stops
+    messages:
+      subscribe.message.state:
+        $ref: '#/components/messages/StopsState'
+      subscribe.message.event:
+        $ref: '#/components/messages/StopEvent'
+      subscribe.message.detailed:
+        $ref: '#/components/messages/StopsStateDetailed'
+    description: Room para estado e eventos de paradas incluindo planejadas e aleatórias
+
+  buffers:
+    address: buffers
+    messages:
+      subscribe.message.state:
+        $ref: '#/components/messages/BuffersState'
+      subscribe.message.event:
+        $ref: '#/components/messages/BufferEvent'
+    description: Room para estado e eventos de buffers
+
+  plantstate:
+    address: plantstate
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/PlantState'
+    description: Room para snapshot completo da planta
+
+  health:
+    address: health
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/Health'
+    description: Room para status de saúde do servidor e simulador
+
+  cars:
+    address: cars
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/CarsState'
+    description: Room para estado completo de todos os carros
+
+  oee:
+    address: oee
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/OEEUpdate'
+    description: Room para atualizações dinâmicas de OEE em tempo real
+
+  mttr_mtbf:
+    address: mttr_mtbf
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/MTTRMTBFUpdate'
+    description: Room para métricas MTTR e MTBF calculadas ao final de cada turno
+
+  command:
+    address: command
+    messages:
+      publish.message:
+        $ref: '#/components/messages/Command'
+    description: Canal para envio de comandos do front end para o simulador
+
+operations:
+  plantUpdate.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/plantUpdate'
+    summary: Receber atualizações do estado da planta em tempo real
+    messages:
+      - $ref: '#/channels/plantUpdate/messages/subscribe.message'
+
+  eventCreated.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/eventCreated'
+    summary: Receber notificação quando um novo evento é criado
+    messages:
+      - $ref: '#/channels/eventCreated/messages/subscribe.message'
+
+  stopStarted.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/stopStarted'
+    summary: Receber notificação quando uma parada inicia
+    messages:
+      - $ref: '#/channels/stopStarted/messages/subscribe.message'
+
+  stopEnded.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/stopEnded'
+    summary: Receber notificação quando uma parada termina
+    messages:
+      - $ref: '#/channels/stopEnded/messages/subscribe.message'
+
+  events.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/events'
+    summary: Receber eventos de carros (movimentações, criação, conclusão, rework, buffer)
+    messages:
+      - $ref: '#/channels/events/messages/subscribe.message'
+
+  stops.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/stops'
+    summary: Receber estado completo das paradas incluindo planejadas e aleatórias
+    messages:
+      - $ref: '#/channels/stops/messages/subscribe.message.state'
+      - $ref: '#/channels/stops/messages/subscribe.message.event'
+      - $ref: '#/channels/stops/messages/subscribe.message.detailed'
+
+  buffers.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/buffers'
+    summary: Receber estado e eventos de buffers
+    messages:
+      - $ref: '#/channels/buffers/messages/subscribe.message.state'
+      - $ref: '#/channels/buffers/messages/subscribe.message.event'
+
+  plantstate.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/plantstate'
+    summary: Receber snapshot completo da planta
+    messages:
+      - $ref: '#/channels/plantstate/messages/subscribe.message'
+
+  health.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/health'
+    summary: Receber status de saúde do servidor e simulador
+    messages:
+      - $ref: '#/channels/health/messages/subscribe.message'
+
+  cars.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/cars'
+    summary: Receber estado completo de todos os carros
+    messages:
+      - $ref: '#/channels/cars/messages/subscribe.message'
+
+  oee.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/oee'
+    summary: Receber atualizações dinâmicas de OEE quando há mudança na produção
+    messages:
+      - $ref: '#/channels/oee/messages/subscribe.message'
+
+  mttr_mtbf.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/mttr_mtbf'
+    summary: Receber métricas MTTR e MTBF calculadas ao final de cada turno
+    messages:
+      - $ref: '#/channels/mttr_mtbf/messages/subscribe.message'
+
+  command.publish:
+    action: receive
+    channel:
+      $ref: '#/channels/command'
+    summary: 'Enviar comandos de simulação (ex: start, pause, reset)'
+    messages:
+      - $ref: '#/channels/command/messages/publish.message'
+
+components:
+  messages:
+    PlantUpdate:
+      name: PlantUpdate
+      title: Atualização do Estado da Planta
+      payload:
+        type: object
+        properties:
+          timestamp:
+            type: integer
+          snapshot:
+            type: object
+            description: Estado global da planta
+
+    EventCreated:
+      name: EventCreated
+      title: Novo Evento Criado
+      payload:
+        type: object
+        properties:
+          event:
+            type: object
+            description: Dados do evento criado
+
+    StopStarted:
+      name: StopStarted
+      title: Parada Iniciada
+      payload:
+        type: object
+        properties:
+          stop:
+            type: object
+            description: Dados da parada iniciada
+
+    StopEnded:
+      name: StopEnded
+      title: Parada Finalizada
+      payload:
+        type: object
+        properties:
+          stop:
+            type: object
+            description: Dados da parada finalizada
+
+    CarEvent:
+      name: CarEvent
+      title: Evento de Carro
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            enum: ["CAR_EVENT"]
+          data:
+            type: object
+            properties:
+              carId:
+                type: string
+              eventType:
+                type: string
+                enum: ["CREATED", "MOVED", "COMPLETED", "REWORK_IN", "REWORK_OUT", "BUFFER_IN", "BUFFER_OUT"]
+              shop:
+                type: string
+              line:
+                type: string
+              station:
+                type: string
+              timestamp:
+                type: number
+              data:
+                type: object
+                description: "campo opcional com dados adicionais específicos do evento"
+            required: ["carId", "eventType", "shop", "line", "station", "timestamp"]
+          timestamp:
+            type: number
+        required: ["type", "data", "timestamp"]
+
+    StopsState:
+      name: StopsState
+      title: Estado das Paradas
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            enum: ["STOPS_STATE"]
+          data:
+            type: array
+            items:
+              type: object
+              properties:
+                id: { type: number }
+                shop: { type: string }
+                line: { type: string }
+                station: { type: string }
+                reason: { type: string }
+                severity:
+                  type: string
+                  enum: ["LOW", "MEDIUM", "HIGH", "PLANNED"]
+                  nullable: true
+                type:
+                  type: string
+                  enum: ["MICRO", "RANDOM_GENERATE", "PROPAGATION", "PLANNED"]
+                status:
+                  type: string
+                  enum: ["PLANNED", "IN_PROGRESS", "COMPLETED"]
+                startTime: { type: number }
+                endTime: { type: number }
+          timestamp: { type: number }
+
+    StopEvent:
+      name: StopEvent
+      title: Evento de Parada
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            enum: ["STOP_EVENT"]
+          data:
+            type: object
+            properties:
+              action:
+                type: string
+                enum: ["STARTED", "ENDED", "UPDATED"]
+              stop:
+                type: object
+                properties:
+                  id: { type: number }
+                  shop: { type: string }
+                  line: { type: string }
+                  station: { type: string }
+                  reason: { type: string }
+                  severity:
+                    type: string
+                    enum: ["LOW", "MEDIUM", "HIGH", "PLANNED"]
+                    nullable: true
+                  type:
+                    type: string
+                    enum: ["MICRO", "RANDOM_GENERATE", "PROPAGATION", "PLANNED"]
+                  category:
+                    type: string
+                    enum: ["NEXT_FULL", "PREV_EMPTY", "PROCESS_QUALITY_FAILURE", "PLANNED_STOP", "SHIFT_CHANGE", "NIGHT_STOP", "LUNCH", "MEETING"]
+                  startTime: { type: number }
+                  endTime: { type: number }
+                  status:
+                    type: string
+                    enum: ["PLANNED", "IN_PROGRESS", "COMPLETED"]
+                  durationMs: { type: number }
+            required: ["action", "stop"]
+          timestamp: { type: number }
+        required: ["type", "data", "timestamp"]
+
+    StopsStateDetailed:
+      name: StopsStateDetailed
+      title: Estado Detalhado das Paradas
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            enum: ["STOPS_STATE_DETAILED"]
+          data:
+            type: object
+            properties:
+              activeStops:
+                type: array
+                description: Lista de paradas ativas na simulação
+                items:
+                  type: object
+                  properties:
+                    id: { type: integer }
+                    shop: { type: string }
+                    line: { type: string }
+                    station: { type: string }
+                    reason: { type: string }
+                    severity:
+                      type: string
+                      enum: ["LOW", "MEDIUM", "HIGH", "PLANNED"]
+                      nullable: true
+                    type:
+                      type: string
+                      enum: ["MICRO", "RANDOM_GENERATE", "PROPAGATION", "PLANNED"]
+                    category:
+                      type: string
+                      enum: ["NEXT_FULL", "PREV_EMPTY", "PROCESS_QUALITY_FAILURE", "PLANNED_STOP", "SHIFT_CHANGE", "NIGHT_STOP", "LUNCH", "MEETING"]
+                    status:
+                      type: string
+                      enum: ["PLANNED", "IN_PROGRESS", "COMPLETED"]
+                    startTime: { type: integer }
+                    endTime: { type: integer }
+                    durationMs: { type: integer }
+              plannedStops:
+                type: array
+                description: Lista de paradas planejadas configuradas no flowPlant
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+                    type: { type: string }
+                    reason: { type: string }
+                    affectsShops:
+                      type: array
+                      items: { type: string }
+                    startTime: { type: string }
+                    durationMn: { type: integer }
+                    daysOfWeek:
+                      type: array
+                      items: { type: integer }
+              randomStops:
+                type: array
+                description: Lista de paradas aleatórias geradas no início do turno
+                items:
+                  type: object
+                  properties:
+                    id: { type: integer }
+                    shop: { type: string }
+                    line: { type: string }
+                    station: { type: string }
+                    reason: { type: string }
+                    severity:
+                      type: string
+                      enum: ["LOW", "MEDIUM", "HIGH", "PLANNED"]
+                      nullable: true
+                    type:
+                      type: string
+                      enum: ["MICRO", "RANDOM_GENERATE", "PROPAGATION", "PLANNED"]
+                    category:
+                      type: string
+                      enum: ["NEXT_FULL", "PREV_EMPTY", "PROCESS_QUALITY_FAILURE", "PLANNED_STOP", "SHIFT_CHANGE", "NIGHT_STOP", "LUNCH", "MEETING"]
+                    status:
+                      type: string
+                      enum: ["PLANNED", "IN_PROGRESS", "COMPLETED"]
+                    startTime: { type: integer }
+                    endTime: { type: integer }
+                    durationMs: { type: integer }
+          timestamp: { type: integer }
+
+    BuffersState:
+      name: BuffersState
+      title: Estado dos Buffers
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            enum: ["BUFFERS_STATE"]
+          data:
+            type: array
+            items:
+              type: object
+              properties:
+                id: { type: string }
+                from: { type: string }
+                to: { type: string }
+                capacity: { type: number }
+                currentCount: { type: number }
+                status:
+                  type: string
+                  enum: ["EMPTY", "AVAILABLE", "FULL"]
+                type:
+                  type: string
+                  enum: ["BUFFER", "REWORK_BUFFER"]
+                carIds:
+                  type: array
+                  items: { type: string }
+          timestamp: { type: number }
+
+    BufferEvent:
+      name: BufferEvent
+      title: Evento de Buffer
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            enum: ["BUFFER_EVENT"]
+          data:
+            type: object
+            properties:
+              action:
+                type: string
+                enum: ["UPDATED"]
+              buffer:
+                type: object
+                properties:
+                  id: { type: string }
+                  from: { type: string }
+                  to: { type: string }
+                  capacity: { type: number }
+                  currentCount: { type: number }
+                  status:
+                    type: string
+                    enum: ["EMPTY", "AVAILABLE", "FULL"]
+                  type:
+                    type: string
+                    enum: ["BUFFER", "REWORK_BUFFER"]
+                  carIds:
+                    type: array
+                    items: { type: string }
+            required: ["action", "buffer"]
+          timestamp: { type: number }
+        required: ["type", "data", "timestamp"]
+
+    PlantState:
+      name: PlantState
+      title: Estado Completo da Planta
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            enum: ["PLANT_STATE"]
+          data:
+            type: object
+            description: "snapshot completo da planta"
+            properties:
+              shops:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    _linesArray:
+                      type: string
+                      nullable: true
+                    name: { type: string }
+                    bufferCapacity: { type: number }
+                    reworkBuffer: { type: number }
+                    lines: { type: object }
+              buffers:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    from: { type: string }
+                    to: { type: string }
+                    capacity: { type: number }
+                    currentCount: { type: number }
+                    status:
+                      type: string
+                      enum: ["EMPTY", "AVAILABLE", "FULL"]
+                    type:
+                      type: string
+                      enum: ["BUFFER", "REWORK_BUFFER"]
+                    carIds:
+                      type: array
+                      items: { type: string }
+              cars:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    sequenceNumber: { type: number }
+                    model: { type: string }
+                    color:
+                      type: array
+                      items: { type: string }
+                    createdAt: { type: number }
+                    completedAt:
+                      type: number
+                      nullable: true
+              stops:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: number }
+                    shop: { type: string }
+                    line: { type: string }
+                    station: { type: string }
+                    reason: { type: string }
+                    type: { type: string }
+                    status: { type: string }
+                    startTime: { type: number }
+                    endTime: { type: number }
+              simulationTime: { type: number }
+              simulationTimeString: { type: string }
+          timestamp: { type: number }
+        required: ["type", "data", "timestamp"]
+
+    Health:
+      name: Health
+      title: Status de Saúde
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            enum: ["HEALTH"]
+          data:
+            type: object
+            properties:
+              serverStatus:
+                type: string
+                enum: ["healthy", "unhealthy"]
+              simulatorStatus:
+                type: string
+                enum: ["running", "stopped", "paused"]
+              timestamp: { type: number }
+              simulatorTimestamp: { type: number }
+              simulatorTimeString: { type: string }
+              uptime: { type: number }
+          timestamp: { type: number }
+        required: ["type", "data", "timestamp"]
+
+    CarsState:
+      name: CarsState
+      title: Estado dos Carros
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            enum: ["CARS_STATE"]
+          data:
+            type: array
+            items:
+              type: object
+              description: "estrutura completa do Car (serializada)"
+              additionalProperties: true
+              properties:
+                id: { type: string }
+                sequenceNumber: { type: number }
+                model: { type: string }
+                color:
+                  type: array
+                  items: { type: string }
+                createdAt: { type: number }
+                completedAt:
+                  type: number
+                  nullable: true
+                metadata:
+                  type: object
+                  nullable: true
+                  additionalProperties: true
+                trace:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      shop: { type: string }
+                      line: { type: string }
+                      station: { type: string }
+                      enter: { type: number }
+                      leave:
+                        type: number
+                        nullable: true
+                hasDefect: { type: boolean }
+                defects:
+                  type: array
+                  items: { type: string }
+                inRework: { type: boolean }
+                reworkEnteredAt:
+                  type: number
+                  nullable: true
+                reworkCompletedAt:
+                  type: number
+                  nullable: true
+                shopLeadtimes:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      shop: { type: string }
+                      enteredAt: { type: number }
+                      exitedAt:
+                        type: number
+                        nullable: true
+                      leadtimeMs:
+                        type: number
+                        nullable: true
+                totalLeadtimeMs:
+                  type: number
+                  nullable: true
+          timestamp: { type: number }
+        required: ["type", "data", "timestamp"]
+
+    OEEUpdate:
+      name: OEEUpdate
+      title: Atualização de OEE em Tempo Real
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            enum: ["OEE_UPDATE"]
+          data:
+            type: array
+            description: Lista de OEE por linha e agregações por shop
+            items:
+              type: object
+              properties:
+                date:
+                  type: string
+                  description: Data no formato YYYY-MM-DD
+                  example: "2026-01-01"
+                shop:
+                  type: string
+                  description: Nome do shop
+                  example: "BODY_SHOP"
+                line:
+                  type: string
+                  description: Nome da linha ou ALL para agregação por shop
+                  example: "LINE_1"
+                productionTime:
+                  type: number
+                  description: Tempo de produção em minutos
+                  example: 480
+                carsProduction:
+                  type: integer
+                  description: Quantidade de carros produzidos
+                  example: 120
+                taktTime:
+                  type: number
+                  description: Takt time em minutos
+                  example: 4
+                diffTime:
+                  type: number
+                  description: Diferença em minutos (productionTime - taktTime * carsProduction)
+                  example: 0
+                oee:
+                  type: number
+                  description: OEE em percentual (0-100)
+                  example: 100
+              required: ["date", "shop", "line", "productionTime", "carsProduction", "taktTime", "diffTime", "oee"]
+          timestamp:
+            type: integer
+        required: ["type", "data", "timestamp"]
+
+    MTTRMTBFUpdate:
+      name: MTTRMTBFUpdate
+      title: Atualização de MTTR/MTBF
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            enum: ["MTTR_MTBF_UPDATE"]
+          data:
+            type: array
+            description: Lista de MTTR/MTBF por station, linha e shop
+            items:
+              type: object
+              properties:
+                date:
+                  type: string
+                  description: Data no formato YYYY-MM-DD
+                  example: "2026-01-01"
+                shop:
+                  type: string
+                  description: Nome do shop
+                  example: "BODY_SHOP"
+                line:
+                  type: string
+                  description: Nome da linha ou ALL para agregação por shop
+                  example: "LINE_1"
+                station:
+                  type: string
+                  description: Nome da station ou ALL para agregação por linha/shop
+                  example: "STATION_1"
+                mttr:
+                  type: number
+                  description: Mean Time To Repair em minutos (tempo médio de reparo das falhas aleatórias)
+                  example: 15.5
+                mtbf:
+                  type: number
+                  description: Mean Time Between Failures em minutos (tempo médio entre falhas)
+                  example: 120.3
+              required: ["date", "shop", "line", "station", "mttr", "mtbf"]
+          timestamp:
+            type: integer
+        required: ["type", "data", "timestamp"]
+
+    Command:
+      name: Command
+      title: Comando de Simulação
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            enum: ["start", "pause", "reset", "custom"]
+          payload:
+            type: object
+            description: Parâmetros do comando
+            properties:
+              speed:
+                type: number
+                description: Velocidade da simulação (opcional, usado com start)
+              startDate:
+                type: string
+                description: Data inicial da simulação (opcional, usado com reset)
+              config:
+                type: object
+                description: Configurações customizadas (opcional, usado com custom)

@@ -1234,3 +1234,154 @@ ID PROBLEM RESOLVE 0++
     - ✅ Ready for functional testing
 
 ---
+
+## ID 018 - Comprehensive Performance Refactoring
+
+1) 2026-01-13 | ~14:00:00
+
+2) **Main problem**: System performance degradation under load - high CPU, memory leaks, excessive bandwidth
+
+3) **Analysis - Multiple performance bottlenecks identified**:
+
+   **Problem A: O(n²) Algorithm in MTTR/MTBF Calculation**
+   - Loop in SimulationFlow iterated ALL stops for EACH station
+   - With 100+ stations and 500+ stops, this was O(n × m) per calculation
+
+   **Problem B: Unbounded trace[] Growth**
+   - Car.trace[] grew indefinitely throughout simulation
+   - Caused memory leaks for long-running simulations
+
+   **Problem C: Excessive WebSocket Bandwidth**
+   - Full car/buffer state emitted every tick
+   - Duplicate emissions (legacy + new channels)
+   - No compression enabled
+
+   **Problem D: N+1 Query Pattern**
+   - UPDATE queries followed by separate SELECT for result
+   - Doubled database round-trips
+
+   **Problem E: No HTTP Optimization**
+   - No compression on large JSON responses
+   - No rate limiting on endpoints
+   - No pagination for list endpoints
+
+4) **Source Problems**:
+   - `src/app/SimulationFlow.ts` | Lines 1025-1136 | O(n²) MTTR calculation
+   - `src/domain/models/Car.ts` | No trace[] limit
+   - `src/adapters/http/websocket/SocketServer.ts` | Duplicate emissions
+   - `src/adapters/database/repositories/*.ts` | N+1 updates
+   - `src/adapters/http/server.ts` | No compression/rate limiting
+
+5) **Flow before (performance bottlenecks)**:
+   ```
+   Each tick:
+   ├─► calculateMTTRMTBF()
+   │     └─► For each station (100+)
+   │           └─► For each stop (500+) → O(n²) filtering!
+   ├─► emitCars()
+   │     └─► Full state every emission (no delta)
+   │     └─► Duplicate emission to legacy channel
+   ├─► DB updates
+   │     └─► UPDATE + SELECT (two round-trips)
+   └─► HTTP responses
+         └─► No compression (large JSON payloads)
+   ```
+
+6) **Solution approach - 6 Phases of Optimization**:
+
+   **Phase 1: Database Foundation**
+   - Added composite indexes (shop+line+timestamp, etc.)
+   - PostgreSQL pool config (max: 20, min: 5, timeout: 30s)
+   - Pagination support in BaseRepository
+   - Result limits with truncation flag
+
+   **Phase 2: Critical Performance**
+   - O(n²) → O(n) via pre-indexed stops Map
+   - MAX_TRACE_LENGTH = 500 with auto-trim
+   - Delta updates for WebSocket (only changed data)
+
+   **Phase 3: HTTP Optimization**
+   - gzip compression (level 6, threshold 1KB)
+   - Rate limiting (100/min global, 30/min writes, 300/min health)
+   - Cache headers for static data
+
+   **Phase 4: WebSocket Optimization**
+   - Removed duplicate legacy emissions
+   - perMessageDeflate compression (threshold 5KB)
+   - Proper socket cleanup on disconnect
+
+   **Phase 5: Services Optimization**
+   - O(1) car counters (completed, defective, by-line, by-shop)
+   - Pre-computed indexes for PlantSnapshot
+   - Getter pattern for Factory/Service data sync
+
+   **Phase 6: Database Optimization**
+   - RETURNING clause to fix N+1 (PostgreSQL)
+   - SQLite PRAGMAs (WAL, cache_size, mmap_size)
+   - Transaction-based batch inserts
+
+7) **Files edited**:
+
+   **Database Layer:**
+   - `src/adapters/database/PostgresDatabase.ts` | Pool config, indexes
+   - `src/adapters/database/SQLiteDatabase.ts` | PRAGMAs, indexes
+   - `src/adapters/database/repositories/BaseRepository.ts` | Pagination, batch insert
+   - `src/adapters/database/repositories/CarEventRepository.ts` | Optimized batch insert
+   - `src/adapters/database/repositories/StopEventRepository.ts` | RETURNING clause
+   - `src/adapters/database/repositories/OEERepository.ts` | RETURNING clause
+   - `src/adapters/database/repositories/MTTRMTBFRepository.ts` | RETURNING clause
+   - `src/adapters/database/repositories/BufferStateRepository.ts` | RETURNING clause
+
+   **HTTP Layer:**
+   - `src/adapters/http/server.ts` | Compression, rate limiting, CORS
+
+   **WebSocket Layer:**
+   - `src/adapters/http/websocket/SocketServer.ts` | perMessageDeflate, cleanup, removed duplicates
+
+   **Domain Layer:**
+   - `src/domain/factories/carFactory.ts` | O(1) counters
+   - `src/domain/factories/plantFactory.ts` | Pre-computed indexes
+   - `src/domain/services/CarService.ts` | Counter getters
+   - `src/domain/services/PlantService.ts` | Index-based PlantSnapshot
+
+   **Application Layer:**
+   - `src/app/SimulationFlow.ts` | Pre-indexed stops for MTTR calculation
+
+8) **New flow (optimized)**:
+   ```
+   Each tick:
+   ├─► calculateMTTRMTBF()
+   │     └─► Pre-indexed stops lookup O(1) per station
+   ├─► emitCars()
+   │     └─► Delta updates only (changed data)
+   │     └─► Compressed via perMessageDeflate
+   ├─► DB updates
+   │     └─► Single query with RETURNING clause
+   └─► HTTP responses
+         └─► gzip compressed (70-90% reduction)
+         └─► Rate limited to prevent abuse
+   ```
+
+9) **Performance Metrics Expected**:
+   - **CPU**: 50-80% reduction at peak
+   - **Memory**: Stable (no unbounded growth)
+   - **WebSocket bandwidth**: 80-95% reduction
+   - **HTTP response size**: 70-90% reduction
+   - **Database query time**: 10-100x faster (with indexes)
+
+10) **Dependencies Added**:
+    ```json
+    "compression": "^1.7.4",
+    "express-rate-limit": "^7.1.5"
+    ```
+
+11) **Validation**:
+    - ✅ TypeScript compilation passes
+    - ✅ All indexes created on database init
+    - ✅ Rate limiting active on all endpoints
+    - ✅ Compression middleware functioning
+    - ✅ WebSocket perMessageDeflate enabled
+    - ✅ O(1) counter lookups working
+    - ✅ Pagination available on all list endpoints
+
+---

@@ -15,10 +15,12 @@ export interface IDatabase {
     getDialect(): 'sqlite' | 'postgres';
 }
 
+import { TimeRangeResult } from '../../utils/shared';
+
 export interface IRepository<T> {
     findAll(filters?: Record<string, any>): Promise<T[]>;
     findById(id: string | number): Promise<T | null>;
-    findByTimeRange(startTime: number, endTime: number): Promise<T[]>;
+    findByTimeRange(startTime: number, endTime: number, limit?: number): Promise<TimeRangeResult<T>>;
     create(entity: Partial<T>): Promise<T>;
     update(id: string | number, entity: Partial<T>): Promise<T | null>;
     delete(id: string | number): Promise<boolean>;

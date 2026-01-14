@@ -348,3 +348,36 @@ export interface SimulationState {
   simulatedTimeFormatted: string;
   speedFactor: number;
 }
+
+// ============================================
+// PAGINAÇÃO E QUERY OPTIONS
+// ============================================
+
+export interface PaginationParams {
+  page: number;      // 1-based, default 1
+  limit: number;     // max 100, default 50
+}
+
+export interface PaginatedResult<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
+
+export interface QueryOptions {
+  columns?: string[];
+  limit?: number;
+  offset?: number;
+  orderBy?: string;
+  orderDir?: 'ASC' | 'DESC';
+}
+
+export interface TimeRangeResult<T> {
+  data: T[];
+  truncated: boolean;
+  total?: number;
+}

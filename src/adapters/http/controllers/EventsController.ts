@@ -17,11 +17,11 @@ export class EventsController {
 
             // Filtro por range de tempo
             if (start_time && end_time) {
-                const events = await this.repository.findByTimeRange(
+                const result = await this.repository.findByTimeRange(
                     parseInt(start_time as string, 10),
                     parseInt(end_time as string, 10)
                 );
-                res.json({ success: true, data: events, count: events.length });
+                res.json({ success: true, data: result.data, count: result.data.length, truncated: result.truncated });
                 return;
             }
 

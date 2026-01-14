@@ -1,7 +1,10 @@
 // src/adapters/http/server.ts
 
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { createServer, Server as HttpServer } from 'http';
+import compression from 'compression';
+import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import AppRouter from './router/router';
 import { socketServer } from './websocket/SocketServer';
 import { DatabaseFactory } from '../database/DatabaseFactory';
@@ -35,8 +38,67 @@ export class Server {
     }
 
     private initializeMiddlewares() {
-        this.app.use(express.json());
-        this.app.use(express.urlencoded({ extended: true }));
+        // CORS - allow all origins for development
+        this.app.use(cors({
+            origin: '*',
+            methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+            allowedHeaders: ['Content-Type', 'Authorization']
+        }));
+
+        // Compression - compress responses > 1KB with level 6
+        this.app.use(compression({
+            level: 6,
+            threshold: 1024,
+            filter: (req: express.Request, res: express.Response) => {
+                if (req.headers['x-no-compression']) {
+                    return false;
+                }
+                return compression.filter(req, res);
+            }
+        }));
+
+        // Rate limiting - Global: 100 requests per minute
+        const globalLimiter = rateLimit({
+            windowMs: 60 * 1000,
+            max: 100,
+            standardHeaders: true,
+            legacyHeaders: false,
+            message: { error: 'Too many requests, please try again later.' },
+            skip: (req: Request) => req.path.startsWith('/api/health')
+        });
+
+        // Rate limiting - Write operations: 30 requests per minute
+        const writeLimiter = rateLimit({
+            windowMs: 60 * 1000,
+            max: 30,
+            standardHeaders: true,
+            legacyHeaders: false,
+            message: { error: 'Too many write requests, please try again later.' }
+        });
+
+        // Rate limiting - Health endpoint: 300 requests per minute (more permissive)
+        const healthLimiter = rateLimit({
+            windowMs: 60 * 1000,
+            max: 300,
+            standardHeaders: true,
+            legacyHeaders: false
+        });
+
+        // Apply rate limiters
+        this.app.use('/api/health', healthLimiter);
+        this.app.use('/api', globalLimiter);
+
+        // Apply write limiter to mutation endpoints
+        this.app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+            if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+                return writeLimiter(req, res, next);
+            }
+            next();
+        });
+
+        // Body parsers
+        this.app.use(express.json({ limit: '1mb' }));
+        this.app.use(express.urlencoded({ extended: true, limit: '1mb' }));
     }
 
     private initializeSwagger() {

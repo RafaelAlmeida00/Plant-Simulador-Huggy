@@ -16,7 +16,7 @@ export class PostgresDatabase implements IDatabase {
     public async connect(): Promise<void> {
         if (this.connected && this.pool) return;
 
-        const poolConfig = this.config.connectionString
+        const baseConfig = this.config.connectionString
             ? { connectionString: this.config.connectionString, ssl: { rejectUnauthorized: false } }
             : {
                 host: this.config.host,
@@ -26,6 +26,16 @@ export class PostgresDatabase implements IDatabase {
                 password: this.config.password,
                 ssl: this.config.ssl ? { rejectUnauthorized: false } : false
             };
+
+        // Pool configuration for optimal performance
+        const poolConfig = {
+            ...baseConfig,
+            max: 20,                        // Maximum pool size
+            min: 5,                         // Minimum pool size
+            idleTimeoutMillis: 30000,       // Close idle connections after 30s
+            connectionTimeoutMillis: 5000,  // Fail if can't connect in 5s
+            allowExitOnIdle: false          // Keep pool alive
+        };
 
         this.pool = new Pool(poolConfig);
         this.connected = true;
@@ -212,7 +222,7 @@ export class PostgresDatabase implements IDatabase {
             )
         `);
 
-        // Índices
+        // Índices básicos
         await this.pool.query(`
             CREATE INDEX IF NOT EXISTS idx_car_events_timestamp ON car_events(timestamp);
             CREATE INDEX IF NOT EXISTS idx_car_events_car_id ON car_events(car_id);
@@ -225,6 +235,34 @@ export class PostgresDatabase implements IDatabase {
             CREATE INDEX IF NOT EXISTS idx_mttr_mtbf_shop ON mttr_mtbf(shop);
             CREATE INDEX IF NOT EXISTS idx_config_plant_name ON config_plant(name);
             CREATE INDEX IF NOT EXISTS idx_config_plant_default ON config_plant(is_default);
+        `);
+
+        // Índices compostos para queries otimizadas
+        await this.pool.query(`
+            -- car_events: queries por shop+line
+            CREATE INDEX IF NOT EXISTS idx_car_events_shop_line ON car_events(shop, line);
+            CREATE INDEX IF NOT EXISTS idx_car_events_shop_line_ts ON car_events(shop, line, timestamp DESC);
+            CREATE INDEX IF NOT EXISTS idx_car_events_event_type ON car_events(event_type);
+
+            -- stop_events: queries por status e shop+line
+            CREATE INDEX IF NOT EXISTS idx_stop_events_status ON stop_events(status);
+            CREATE INDEX IF NOT EXISTS idx_stop_events_status_start ON stop_events(status, start_time DESC);
+            CREATE INDEX IF NOT EXISTS idx_stop_events_shop_line ON stop_events(shop, line);
+            CREATE INDEX IF NOT EXISTS idx_stop_events_shop_line_status ON stop_events(shop, line, status);
+            CREATE INDEX IF NOT EXISTS idx_stop_events_severity ON stop_events(severity);
+
+            -- buffer_states: queries por buffer_id
+            CREATE INDEX IF NOT EXISTS idx_buffer_states_buffer_id ON buffer_states(buffer_id);
+            CREATE INDEX IF NOT EXISTS idx_buffer_states_buffer_ts ON buffer_states(buffer_id, timestamp DESC);
+
+            -- oee: queries compostas
+            CREATE INDEX IF NOT EXISTS idx_oee_date_shop ON oee(date, shop);
+            CREATE INDEX IF NOT EXISTS idx_oee_date_shop_line ON oee(date, shop, line);
+
+            -- mttr_mtbf: queries compostas
+            CREATE INDEX IF NOT EXISTS idx_mttr_mtbf_date_shop ON mttr_mtbf(date, shop);
+            CREATE INDEX IF NOT EXISTS idx_mttr_mtbf_shop_line ON mttr_mtbf(shop, line);
+            CREATE INDEX IF NOT EXISTS idx_mttr_mtbf_shop_line_station ON mttr_mtbf(shop, line, station);
         `);
     }
 }

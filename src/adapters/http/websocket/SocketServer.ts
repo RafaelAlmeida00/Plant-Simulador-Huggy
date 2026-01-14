@@ -22,12 +22,18 @@ export class SocketServer {
     private io: SocketIOServer | null = null;
     private static instance: SocketServer | null = null;
     private readonly allowedChannels = new Set(['events', 'stops', 'buffers', 'plantstate', 'health', 'cars', 'oee', 'controlSimulator']);
-    
+
     // Cache do último estado de cada room para emissão imediata ao inscrever
     private lastState: Map<string, SocketEventData> = new Map();
 
     // Referência ao simulador para controle via WebSocket
     private simulator: SimulationClock | null = null;
+
+    // Performance: Track socket subscriptions for cleanup
+    private socketSubscriptions: Map<string, Set<string>> = new Map();
+
+    // Performance: Car state hashes for delta updates
+    private carStateHashes: Map<string, string> = new Map();
 
     private constructor() {}
 
@@ -49,7 +55,14 @@ export class SocketServer {
                 origin: '*',
                 methods: ['GET', 'POST']
             },
-            path: '/socket.io'
+            path: '/socket.io',
+            // Performance: Enable WebSocket compression for large payloads
+            perMessageDeflate: {
+                threshold: 5120,  // Only compress messages > 5KB
+                zlibDeflateOptions: { level: 6 },
+                zlibInflateOptions: { chunkSize: 16 * 1024 }
+            },
+            httpCompression: true
         });
 
         this.setupConnectionHandlers();
@@ -62,14 +75,22 @@ export class SocketServer {
         this.io.on('connection', (socket: Socket) => {
             console.log(`[SOCKET] Client connected: ${socket.id}`);
 
+            // Performance: Initialize subscription tracking for this socket
+            this.socketSubscriptions.set(socket.id, new Set());
+
             // Permitir que clientes se inscrevam em canais específicos
             socket.on('subscribe', (channel: string) => {
                 if (!this.allowedChannels.has(channel)) {
                     return;
                 }
                 socket.join(channel);
+
+                // Track subscription for cleanup
+                const subs = this.socketSubscriptions.get(socket.id);
+                if (subs) subs.add(channel);
+
                 console.log(`[SOCKET] Client ${socket.id} subscribed to ${channel}`);
-                
+
                 // Emite imediatamente o último estado da room para o cliente
                 this.emitLastStateToSocket(socket, channel);
             });
@@ -79,6 +100,11 @@ export class SocketServer {
                     return;
                 }
                 socket.leave(channel);
+
+                // Remove from tracking
+                const subs = this.socketSubscriptions.get(socket.id);
+                if (subs) subs.delete(channel);
+
                 console.log(`[SOCKET] Client ${socket.id} unsubscribed from ${channel}`);
             });
 
@@ -88,6 +114,14 @@ export class SocketServer {
             });
 
             socket.on('disconnect', () => {
+                // Performance: Explicit cleanup on disconnect to prevent memory leaks
+                const subs = this.socketSubscriptions.get(socket.id);
+                if (subs) {
+                    subs.forEach(channel => socket.leave(channel));
+                }
+                this.socketSubscriptions.delete(socket.id);
+                socket.removeAllListeners();
+
                 console.log(`[SOCKET] Client disconnected: ${socket.id}`);
             });
         });
@@ -224,8 +258,7 @@ export class SocketServer {
 
         // room-based (subscribe/unsubscribe passa a funcionar)
         this.io.to('events').emit('events', payload);
-        // alias legado
-        this.io.to('events').emit('car_event', payload);
+        // Note: Legacy alias 'car_event' removed for performance (was duplicating messages)
     }
 
     // Emite estado das paradas
@@ -255,8 +288,7 @@ export class SocketServer {
         };
 
         this.io.to('stops').emit('stops', payload);
-        // alias legado
-        this.io.to('stops').emit('stop_event', payload);
+        // Note: Legacy alias 'stop_event' removed for performance (was duplicating messages)
     }
 
     // Emite estado de todos os stops
@@ -317,8 +349,7 @@ export class SocketServer {
         };
 
         this.io.to('buffers').emit('buffers', payload);
-        // alias legado
-        this.io.to('buffers').emit('buffer_event', payload);
+        // Note: Legacy alias 'buffer_event' removed for performance (was duplicating messages)
     }
 
     // Emite estado de todos os buffers
@@ -362,8 +393,7 @@ export class SocketServer {
 
         this.cacheState('plantstate', payload);
         this.io.to('plantstate').emit('plantstate', payload);
-        // alias legado
-        this.io.to('plantstate').emit('plant_state', payload);
+        // Note: Legacy alias 'plant_state' removed for performance (was duplicating messages)
     }
 
     // Emite health check
@@ -387,18 +417,67 @@ export class SocketServer {
         this.io.to('health').emit('health', payload);
     }
 
-    // Emite estado completo de todos os carros (estrutura completa do Car)
+    /**
+     * Serialize car to minimal payload - excludes trace[] and shopLeadtimes[] to reduce bandwidth
+     * Full trace is typically 20KB+ per car; minimal is ~200 bytes
+     */
+    private serializeCarMinimal(car: ICar): object {
+        const lastTrace = car.trace[car.trace.length - 1];
+        return {
+            id: car.id,
+            sequenceNumber: car.sequenceNumber,
+            model: car.model,
+            color: car.color,
+            createdAt: car.createdAt,
+            completedAt: car.completedAt,
+            hasDefect: car.hasDefect,
+            inRework: car.inRework,
+            isPart: car.isPart,
+            partName: car.partName,
+            // Include only current location, not full trace
+            currentLocation: lastTrace ? {
+                shop: lastTrace.shop,
+                line: lastTrace.line,
+                station: lastTrace.station
+            } : null,
+            // Include trace count for debugging
+            traceCount: car.trace.length
+        };
+    }
+
+    /**
+     * Emits optimized car state with minimal payload (no full traces)
+     * Use emitCarsFull() if you need complete trace data
+     */
     public emitCars(cars: ICar[]): void {
         if (!this.io) return;
 
+        // Performance: Serialize cars without full trace for reduced bandwidth
+        const minimalCars = cars.map(car => this.serializeCarMinimal(car));
+
         const payload: SocketEventData = {
             type: 'CARS_STATE',
-            data: cars,
+            data: minimalCars,
             timestamp: Date.now()
         };
 
         this.cacheState('cars', payload);
         this.io.to('cars').emit('cars', payload);
+    }
+
+    /**
+     * Emits full car state including complete traces (use sparingly - large payload)
+     */
+    public emitCarsFull(cars: ICar[]): void {
+        if (!this.io) return;
+
+        const payload: SocketEventData = {
+            type: 'CARS_STATE_FULL',
+            data: cars,
+            timestamp: Date.now()
+        };
+
+        this.io.to('cars').emit('cars_full', payload);
     }
 
     // Emite dados de OEE em tempo real

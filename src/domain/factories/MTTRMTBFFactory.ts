@@ -1,7 +1,112 @@
-import { MTTRMTBFCalculationInput, MTTRMTBFData } from "../../utils/shared";
+import { IStopLine, MTTRMTBFCalculationInput, MTTRMTBFData } from "../../utils/shared";
+
+// Pre-indexed stops for O(1) lookup instead of O(n) filtering
+export type StopIndex = Map<string, IStopLine[]>;
 
 export class MTTRMTBFFactory {
 
+    /**
+     * Build stop index for O(1) lookups during MTTR/MTBF calculation
+     * Call this ONCE before iterating through all stations
+     */
+    public static buildStopIndex(stops: IStopLine[]): StopIndex {
+        const index: StopIndex = new Map();
+
+        for (const stop of stops) {
+            // Skip non-completed and planned stops
+            if (stop.type === 'PLANNED' || stop.status !== 'COMPLETED') continue;
+
+            // Index by specific station
+            const stationKey = `${stop.shop}-${stop.line}-${stop.station}`;
+            if (!index.has(stationKey)) index.set(stationKey, []);
+            index.get(stationKey)!.push(stop);
+
+            // Also index "ALL" station stops under a special key pattern
+            // These will be merged when querying for a specific station
+            if (stop.station === 'ALL') {
+                const lineKey = `${stop.shop}-${stop.line}-__ALL__`;
+                if (!index.has(lineKey)) index.set(lineKey, []);
+                index.get(lineKey)!.push(stop);
+            }
+        }
+
+        return index;
+    }
+
+    /**
+     * Get pre-filtered stops for a specific station from index - O(1)
+     */
+    public static getStopsForStation(
+        index: StopIndex,
+        shop: string,
+        line: string,
+        station: string
+    ): IStopLine[] {
+        const stationKey = `${shop}-${line}-${station}`;
+        const lineAllKey = `${shop}-${line}-__ALL__`;
+
+        const stationStops = index.get(stationKey) || [];
+        const allStationStops = index.get(lineAllKey) || [];
+
+        // Combine specific station stops with "ALL" station stops
+        if (allStationStops.length === 0) return stationStops;
+        if (stationStops.length === 0) return allStationStops;
+
+        return [...stationStops, ...allStationStops];
+    }
+
+    /**
+     * Calculate MTTR/MTBF with pre-filtered stops (optimized path)
+     * Use this when stops are already filtered via buildStopIndex
+     */
+    public calculateStationMTTRMTBFOptimized(
+        shop: string,
+        line: string,
+        station: string,
+        productionTimeMinutes: number,
+        preFilteredStops: IStopLine[],
+        simulatedTimestamp: number
+    ): MTTRMTBFData {
+        const simDate = new Date(simulatedTimestamp);
+        const dateStr = simDate.toISOString().split('T')[0];
+
+        const stopCount = preFilteredStops.length;
+
+        if (stopCount === 0) {
+            return {
+                date: dateStr,
+                shop,
+                line,
+                station,
+                mttr: 0,
+                mtbf: productionTimeMinutes
+            };
+        }
+
+        // Sum total stop time
+        let totalStopTimeMs = 0;
+        for (const stop of preFilteredStops) {
+            totalStopTimeMs += stop.durationMs as number;
+        }
+        const totalStopTimeMinutes = totalStopTimeMs / 60000;
+
+        const mttr = totalStopTimeMinutes / stopCount;
+        const mtbf = productionTimeMinutes / stopCount;
+
+        return {
+            date: dateStr,
+            shop,
+            line,
+            station,
+            mttr: Math.round(mttr * 100) / 100,
+            mtbf: Math.round(mtbf * 100) / 100
+        };
+    }
+
+    /**
+     * Original method - kept for backward compatibility
+     * Consider using calculateStationMTTRMTBFOptimized with pre-indexed stops
+     */
     public calculateStationMTTRMTBF(input: MTTRMTBFCalculationInput): MTTRMTBFData {
         const simDate = new Date(input.simulatedTimestamp);
         const dateStr = simDate.toISOString().split('T')[0];
@@ -27,17 +132,13 @@ export class MTTRMTBFFactory {
             };
         }
 
-        // Soma o tempo total de todas as paradas random (em minutos)
         let totalStopTimeMs = 0;
         for (const stop of randomStops) {
             totalStopTimeMs += stop.durationMs as number;
         }
         const totalStopTimeMinutes = totalStopTimeMs / 60000;
 
-        // MTTR = soma dos tempos de parada / número de paradas
         const mttr = totalStopTimeMinutes / stopCount;
-
-        // MTBF = productionTime / número de paradas
         const mtbf = input.productionTimeMinutes / stopCount;
 
         return {

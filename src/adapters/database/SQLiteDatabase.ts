@@ -26,7 +26,15 @@ export class SQLiteDatabase implements IDatabase {
         }
 
         this.db = new Database(dbPath);
+
+        // SQLite PRAGMAs para performance otimizada
         this.db.pragma('journal_mode = WAL');
+        this.db.pragma('synchronous = NORMAL');       // Faster than FULL, safe with WAL
+        this.db.pragma('cache_size = -64000');        // 64MB cache
+        this.db.pragma('temp_store = MEMORY');        // Keep temp tables in memory
+        this.db.pragma('mmap_size = 268435456');      // 256MB memory-mapped I/O
+        this.db.pragma('busy_timeout = 5000');        // 5s timeout for locks
+
         this.connected = true;
         
         await this.initializeTables();
@@ -202,7 +210,7 @@ export class SQLiteDatabase implements IDatabase {
             )
         `);
 
-        // Índices para performance
+        // Índices básicos para performance
         this.db.exec(`
             CREATE INDEX IF NOT EXISTS idx_car_events_timestamp ON car_events(timestamp);
             CREATE INDEX IF NOT EXISTS idx_car_events_car_id ON car_events(car_id);
@@ -214,7 +222,35 @@ export class SQLiteDatabase implements IDatabase {
             CREATE INDEX IF NOT EXISTS idx_mttr_mtbf_date ON mttr_mtbf(date);
             CREATE INDEX IF NOT EXISTS idx_mttr_mtbf_shop ON mttr_mtbf(shop);
             CREATE INDEX IF NOT EXISTS idx_config_plant_name ON config_plant(name);
-            CREATE INDEX IF NOT EXISTS idx_config_plant_default ON config_plant(is_default);
+            CREATE INDEX IF NOT EXISTS idx_config_plant_default ON config_plant(is_default)
+        `);
+
+        // Índices compostos para queries otimizadas
+        this.db.exec(`
+            -- car_events: queries por shop+line
+            CREATE INDEX IF NOT EXISTS idx_car_events_shop_line ON car_events(shop, line);
+            CREATE INDEX IF NOT EXISTS idx_car_events_shop_line_ts ON car_events(shop, line, timestamp DESC);
+            CREATE INDEX IF NOT EXISTS idx_car_events_event_type ON car_events(event_type);
+
+            -- stop_events: queries por status e shop+line
+            CREATE INDEX IF NOT EXISTS idx_stop_events_status ON stop_events(status);
+            CREATE INDEX IF NOT EXISTS idx_stop_events_status_start ON stop_events(status, start_time DESC);
+            CREATE INDEX IF NOT EXISTS idx_stop_events_shop_line ON stop_events(shop, line);
+            CREATE INDEX IF NOT EXISTS idx_stop_events_shop_line_status ON stop_events(shop, line, status);
+            CREATE INDEX IF NOT EXISTS idx_stop_events_severity ON stop_events(severity);
+
+            -- buffer_states: queries por buffer_id
+            CREATE INDEX IF NOT EXISTS idx_buffer_states_buffer_id ON buffer_states(buffer_id);
+            CREATE INDEX IF NOT EXISTS idx_buffer_states_buffer_ts ON buffer_states(buffer_id, timestamp DESC);
+
+            -- oee: queries compostas
+            CREATE INDEX IF NOT EXISTS idx_oee_date_shop ON oee(date, shop);
+            CREATE INDEX IF NOT EXISTS idx_oee_date_shop_line ON oee(date, shop, line);
+
+            -- mttr_mtbf: queries compostas
+            CREATE INDEX IF NOT EXISTS idx_mttr_mtbf_date_shop ON mttr_mtbf(date, shop);
+            CREATE INDEX IF NOT EXISTS idx_mttr_mtbf_shop_line ON mttr_mtbf(shop, line);
+            CREATE INDEX IF NOT EXISTS idx_mttr_mtbf_shop_line_station ON mttr_mtbf(shop, line, station)
         `);
     }
 }

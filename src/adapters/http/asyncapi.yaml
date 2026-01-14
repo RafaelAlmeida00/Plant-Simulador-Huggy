@@ -1,13 +1,24 @@
 asyncapi: 3.0.0
 info:
   title: Plant Simulador WebSocket API
-  version: 1.0.0
+  version: 1.1.0
   description: >
     API de comunicação em tempo real via WebSocket (socket.io) para o
     Plant-Simulador.
 
     Permite o front end receber atualizações instantâneas de eventos, estados,
     notificações e enviar comandos de simulação.
+
+
+    ## Performance Features
+
+    - **perMessageDeflate Compression**: Mensagens > 5KB são comprimidas automaticamente (zlib level 6)
+
+    - **Delta Updates**: Apenas mudanças são enviadas (não estado completo)
+
+    - **Throttled Emissions**: Buffers 5s, Cars 10s, PlantState 10s
+
+    - **Connection Cleanup**: Listeners são removidos automaticamente no disconnect
 servers:
   production:
     host: 'localhost:3000'

@@ -63,47 +63,43 @@ export class PlantService {
         return this.shops as Map<string, IShop>;
     }
 
+    /**
+     * Optimized PlantSnapshot using pre-computed indexes - O(n) instead of O(n²)
+     */
     public getPlantSnapshot(): PlantSnapshot {
         const timestamp = Date.now();
-        const arrShops = Array.from(this.shops?.values() || []).filter(Boolean) as IShop[];
-        const arrLines = Array.from(this.lines?.values() || []).filter(Boolean) as ILine[];
-        const arrStations = Array.from(this.stations.values() || []).filter(Boolean) as IStation[];
+        const arrShops: IShop[] = [];
 
-        arrShops.forEach((shop) => {
-            if (!shop) return;
-            shop.lines = arrLines.filter((line) => line?.shop === shop.name);
-            for (const line of shop.lines.values()) {
-                if (!line) continue;
-                line.stations = arrStations.filter((station) =>
-                    station?.line === line.line && station?.shop === shop.name
-                );
-            }
-        });
+        // Use pre-computed indexes for O(1) lookups
+        for (const shop of this.shops?.values() || []) {
+            if (!shop) continue;
+
+            // O(1) lookup instead of O(lines) filter
+            const shopLines = this.plantFactory.getLinesByShop(shop.name);
+            shop.lines = shopLines;
+
+            // Lines already have their stations from factory creation
+            // No need to re-filter - stations are directly on the line object
+            arrShops.push(shop);
+        }
+
+        // Station counters - O(n) single pass
         const totalStations = this.stations.size;
         let totalOccupied = 0;
-        let totalFree = 0;
         let totalStopped = 0;
-        for (const station of this.stations.values() || []) {
-            if (!station) {
-                continue;
-            }
-            if (station.occupied) {
-                totalOccupied++;
-            }
-            if (!station.occupied) {
-                totalFree++;
-            }
-            if (station.isStopped) {
-                totalStopped++;
-            }
+
+        for (const station of this.stations.values()) {
+            if (!station) continue;
+            if (station.occupied) totalOccupied++;
+            if (station.isStopped) totalStopped++;
         }
 
         return {
             timestamp,
             shops: arrShops,
-            totalStations: totalStations || 0,
+            totalStations,
             totalOccupied,
-            totalFree,
+            totalFree: totalStations - totalOccupied,
             totalStopped
         };
     }

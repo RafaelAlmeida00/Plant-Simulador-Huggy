@@ -17,11 +17,11 @@ export class PlantStateController {
 
             // Filtro por range de tempo
             if (start_time && end_time) {
-                const snapshots = await this.repository.findByTimeRange(
+                const result = await this.repository.findByTimeRange(
                     parseInt(start_time as string, 10),
                     parseInt(end_time as string, 10)
                 );
-                res.json({ success: true, data: snapshots, count: snapshots.length });
+                res.json({ success: true, data: result.data, count: result.data.length, truncated: result.truncated });
                 return;
             }
 

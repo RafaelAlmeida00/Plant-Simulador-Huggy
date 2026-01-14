@@ -83,7 +83,7 @@ export class BufferStateRepository extends BaseRepository<IBufferState> {
 
     public async update(id: string | number, entity: Partial<IBufferState>): Promise<IBufferState | null> {
         const db = await this.getDb();
-        
+
         const updates: string[] = [];
         const params: any[] = [];
         let paramIndex = 1;
@@ -104,7 +104,14 @@ export class BufferStateRepository extends BaseRepository<IBufferState> {
         if (updates.length === 0) return this.findById(id);
 
         params.push(id);
-        const sql = `UPDATE ${this.tableName} SET ${updates.join(', ')} WHERE id = $${paramIndex} ${this.getReturningClause(db)}`;
+        const returningClause = this.getReturningClause(db);
+        const sql = `UPDATE ${this.tableName} SET ${updates.join(', ')} WHERE id = $${paramIndex}${returningClause}`;
+
+        // PostgreSQL returns updated row directly, SQLite needs separate query
+        if (db.getDialect() === 'postgres') {
+            const result = await db.query<IBufferState>(this.convertPlaceholders(db, sql), params);
+            return result.rows[0] ? this.normalize(result.rows[0]) : null;
+        }
 
         await db.execute(this.convertPlaceholders(db, sql), params);
         const updated = await this.findById(id);

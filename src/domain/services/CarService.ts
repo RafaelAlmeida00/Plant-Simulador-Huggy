@@ -77,67 +77,39 @@ export class CarService {
         return this.currentSequence;
     }
 
+    /**
+     * O(1) - Uses pre-computed counter instead of O(n) iteration
+     */
     public getCompletedCarsCount(): number {
-        let count = 0;
-        for (const car of this.cars.values()) {
-            if (car.completedAt) {
-                count++;
-            }
-        }
-        return count;
+        return this.carFactory.completedCount;
     }
 
+    /**
+     * O(1) - Uses pre-computed counter instead of O(n) iteration
+     */
     public getDefectiveCarsCount(): number {
-        let count = 0;
-        for (const car of this.cars.values()) {
-            if (car.hasDefect) {
-                count++;
-            }
-        }
-        return count;
+        return this.carFactory.defectiveCount;
     }
 
+    /**
+     * O(1) - Uses pre-computed counter instead of O(n*m) iteration
+     */
     public getCompletedCardByLineCount(line: ILine): number {
-        let count = 0;
         if (!line.id || !line.shop) {
-            return count;
+            return 0;
         }
-        if (line.partType) {
-            for (const car of this.parts.values()) {
-                if (car.shopLeadtimes.length === 0) continue;
-                const traceExist = car.shopLeadtimes.find(t => t.line === line.id.split("-")[1] && t.shop === line.shop && t.exitedAt);
-                if (!traceExist) continue;
-                count++;
-            }
-            return count;
-        }
-        for (const car of this.cars.values()) {
-            if (car.shopLeadtimes.length === 0) continue;
-            const traceExist = car.shopLeadtimes.find(t => t.line === line.id.split("-")[1] && t.shop === line.shop && t.exitedAt);
-            if (!traceExist) continue;
-            count++;
-        }
-        return count;
+        const lineName = line.id.split("-")[1];
+        return this.carFactory.getCompletedByLineCount(line.shop, lineName);
     }
 
+    /**
+     * O(1) - Uses pre-computed counter instead of O(n*m) iteration
+     */
     public getCompletedCardByShopCount(shop: IShop): number {
-        let count = 0;
         if (!shop || !shop.name) {
-            return count;
+            return 0;
         }
-        for (const car of this.parts.values()) {
-            if (car.shopLeadtimes.length === 0) continue;
-            const traceExist = car.shopLeadtimes.find(t => t.shop === shop.name && t.exitedAt && !t.line);
-            if (!traceExist) continue;
-            count++;
-        }
-        for (const car of this.cars.values()) {
-            if (car.shopLeadtimes.length === 0) continue;
-            const traceExist = car.shopLeadtimes.find(t => t.shop === shop.name && t.exitedAt && !t.line);
-            if (!traceExist) continue;
-            count++;
-        }
-        return count;
+        return this.carFactory.getCompletedByShopCount(shop.name);
     }
 
     public moveCarToNextStation(carId: string, currentStationId: string, nextStationId: string, timeTs: number): void {
@@ -271,11 +243,13 @@ export class CarService {
         }
 
         const existingShopLeadTime = car.shopLeadtimes.find(
-            t => t.shop === station.shop && !t.exitedAt
+            t => t.shop === station.shop && !t.exitedAt && !t.line
         );
         if (existingShopLeadTime) {
             existingShopLeadTime.exitedAt = timeTs;
             existingShopLeadTime.leadtimeMs = timeTs - (existingShopLeadTime.enteredAt || car.createdAt);
+            // Increment shop exit counter - O(1) tracking
+            this.carFactory.incrementShopExit(station.shop);
         }
 
         const existingLineLeadTime = car.shopLeadtimes.find(
@@ -284,6 +258,8 @@ export class CarService {
         if (existingLineLeadTime) {
             existingLineLeadTime.exitedAt = timeTs;
             existingLineLeadTime.leadtimeMs = timeTs - (existingLineLeadTime.enteredAt || car.createdAt);
+            // Increment line exit counter - O(1) tracking
+            this.carFactory.incrementLineExit(station.shop, station.line);
         }
 
         const success = this.bufferService.addCarToBuffer(bufferId, car);
@@ -363,6 +339,12 @@ export class CarService {
         const car = this.cars.get(carId);
         if (!car) return;
         car.completedAt = completeAt;
+
+        // Increment completed counter - O(1) tracking
+        // stationId format: "SHOP-LINE-STATION"
+        const [shop, line] = stationId.split('-');
+        this.carFactory.incrementCompleted(shop, line);
+
         this.plantService.removeCarFromStation(stationId);
         this.cars.set(carId, car);
     }

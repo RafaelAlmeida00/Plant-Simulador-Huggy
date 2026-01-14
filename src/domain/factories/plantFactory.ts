@@ -56,6 +56,24 @@ export class PlantFactory {
     public lines: Map<string, ILine> = new Map();
     public stations: Map<string, IStation> = new Map();
 
+    // Pre-computed indexes for O(1) lookups in PlantSnapshot
+    private _linesByShop: Map<string, ILine[]> = new Map();
+    private _stationsByShopLine: Map<string, IStation[]> = new Map();
+    private _structureVersion: number = 0;
+
+    // Getters for indexed access - O(1)
+    public getLinesByShop(shopName: string): ILine[] {
+        return this._linesByShop.get(shopName) || [];
+    }
+
+    public getStationsByShopLine(shop: string, line: string): IStation[] {
+        return this._stationsByShopLine.get(`${shop}-${line}`) || [];
+    }
+
+    public getStructureVersion(): number {
+        return this._structureVersion;
+    }
+
     public createShop(shopName: string): IShop {
         const shopConfig = activeFlowPlant.shops[shopName];
         if (!shopConfig) throw new Error(`Shop ${shopName} not found in config`);
@@ -145,7 +163,14 @@ export class PlantFactory {
             });
             this.lines?.set(newLine.id, newLine);
             linesMap.set(lineName, newLine);
+
+            // Populate station index - O(1) lookup later
+            this._stationsByShopLine.set(`${shopName}-${lineName}`, stations);
         }
+
+        // Populate line index for this shop - O(1) lookup later
+        this._linesByShop.set(shopName, Array.from(linesMap.values()));
+        this._structureVersion++;
 
         return new Shop({
             name: shopName,
@@ -173,6 +198,8 @@ export class PlantFactory {
         this.shops.clear();
         this.lines.clear();
         this.stations.clear();
+        this._linesByShop.clear();
+        this._stationsByShopLine.clear();
         this.createAllShops();
     }
 

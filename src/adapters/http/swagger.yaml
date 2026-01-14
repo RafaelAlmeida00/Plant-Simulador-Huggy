@@ -1,9 +1,14 @@
 openapi: 3.0.0
 info:
   title: Plant Simulador API
-  version: 1.0.0
+  version: 1.1.0
   description: |
     API para simulação e monitoramento de uma planta industrial, incluindo eventos, buffers, paradas, snapshots e saúde do sistema.
+
+    ## Performance Features
+    - **HTTP Compression**: gzip (level 6, threshold 1KB)
+    - **Rate Limiting**: 100 req/min (global), 30 req/min (writes), 300 req/min (health)
+    - **Pagination**: All list endpoints support `page` and `limit` parameters (max 100 records per page)
 servers:
   - url: http://localhost:3000
 paths:
@@ -11,6 +16,21 @@ paths:
     get:
       summary: Lista todos os eventos
       parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Número da página (1-based)
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Quantidade de registros por página (max 100)
         - in: query
           name: car_id
           schema:
@@ -41,7 +61,11 @@ paths:
             type: integer
       responses:
         '200':
-          description: Lista de eventos
+          description: Lista paginada de eventos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
     post:
       summary: Cria um novo evento
       requestBody:
@@ -104,6 +128,21 @@ paths:
       summary: Lista todas as paradas
       parameters:
         - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Número da página (1-based)
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Quantidade de registros por página (max 100)
+        - in: query
           name: stop_id
           schema:
             type: string
@@ -141,7 +180,11 @@ paths:
             type: integer
       responses:
         '200':
-          description: Lista de paradas
+          description: Lista paginada de paradas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
     post:
       summary: Cria uma nova parada
       requestBody:
@@ -204,6 +247,21 @@ paths:
       summary: Lista todos os estados de buffer
       parameters:
         - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Número da página (1-based)
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Quantidade de registros por página (max 100)
+        - in: query
           name: buffer_id
           schema:
             type: string
@@ -233,7 +291,11 @@ paths:
             type: integer
       responses:
         '200':
-          description: Lista de estados de buffer
+          description: Lista paginada de estados de buffer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
     post:
       summary: Cria um novo estado de buffer
       requestBody:
@@ -380,6 +442,21 @@ paths:
       summary: Lista todos os registros de OEE
       parameters:
         - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Número da página (1-based)
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Quantidade de registros por página (max 100)
+        - in: query
           name: date
           schema:
             type: string
@@ -402,7 +479,11 @@ paths:
             type: integer
       responses:
         '200':
-          description: Lista de registros OEE
+          description: Lista paginada de registros OEE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
     post:
       summary: Cria um novo registro de OEE
       requestBody:
@@ -465,6 +546,21 @@ paths:
       summary: Lista todos os registros de MTTR/MTBF
       parameters:
         - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Número da página (1-based)
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Quantidade de registros por página (max 100)
+        - in: query
           name: date
           schema:
             type: string
@@ -491,7 +587,11 @@ paths:
             type: integer
       responses:
         '200':
-          description: Lista de registros MTTR/MTBF
+          description: Lista paginada de registros MTTR/MTBF
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
     post:
       summary: Cria um novo registro de MTTR/MTBF
       requestBody:
@@ -859,3 +959,39 @@ components:
         isDefault:
           type: boolean
           description: Se true, esta configuração será definida como padrão
+    PaginatedResponse:
+      type: object
+      description: Resposta paginada padrão para endpoints de listagem
+      properties:
+        success:
+          type: boolean
+          description: Indica se a operação foi bem sucedida
+        data:
+          type: array
+          description: Lista de registros da página atual
+          items:
+            type: object
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+              description: Página atual (1-based)
+            limit:
+              type: integer
+              description: Quantidade de registros por página
+            total:
+              type: integer
+              description: Total de registros no banco
+            totalPages:
+              type: integer
+              description: Total de páginas disponíveis
+            hasNext:
+              type: boolean
+              description: Indica se existe próxima página
+            hasPrevious:
+              type: boolean
+              description: Indica se existe página anterior
+        count:
+          type: integer
+          description: Quantidade de registros retornados na página atual

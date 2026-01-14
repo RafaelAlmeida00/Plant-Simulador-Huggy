@@ -53,7 +53,7 @@ export class MTTRMTBFRepository extends BaseRepository<IMTTRMTBF> {
 
     public async update(id: string | number, entity: Partial<IMTTRMTBF>): Promise<IMTTRMTBF | null> {
         const db = await this.getDb();
-        
+
         const updates: string[] = [];
         const params: any[] = [];
         let paramIndex = 1;
@@ -69,7 +69,14 @@ export class MTTRMTBFRepository extends BaseRepository<IMTTRMTBF> {
         if (updates.length === 0) return this.findById(id);
 
         params.push(id);
-        const sql = `UPDATE ${this.tableName} SET ${updates.join(', ')} WHERE id = $${paramIndex} ${this.getReturningClause(db)}`;
+        const returningClause = this.getReturningClause(db);
+        const sql = `UPDATE ${this.tableName} SET ${updates.join(', ')} WHERE id = $${paramIndex}${returningClause}`;
+
+        // PostgreSQL returns updated row directly, SQLite needs separate query
+        if (db.getDialect() === 'postgres') {
+            const result = await db.query<IMTTRMTBF>(this.convertPlaceholders(db, sql), params);
+            return result.rows[0] || null;
+        }
 
         await db.execute(this.convertPlaceholders(db, sql), params);
         return this.findById(id);

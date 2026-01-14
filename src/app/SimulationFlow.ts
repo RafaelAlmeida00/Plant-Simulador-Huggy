@@ -5,7 +5,7 @@ import { OEEService } from "../domain/services/OEEService";
 import { PlantService } from "../domain/services/PlantService";
 import { StopLineService } from "../domain/services/StopLineService";
 import { logger } from "../utils/logger";
-import { TickEvent, SimulationCallbacks, IStation, ILine, IBuffer, ICar, ICarTrace, StationLocation, IStopLine, OEECalculationInput, MTTRMTBFCalculationInput, MTTRMTBFData, OEEData, IShop } from "../utils/shared";
+import { TickEvent, SimulationCallbacks, IStation, ILine, IBuffer, ICar, ICarTrace, StationLocation, IStopLine, OEECalculationInput, MTTRMTBFData, OEEData, IShop } from "../utils/shared";
 import { BufferService } from "../domain/services/BufferService";
 import { getActiveFlowPlant } from "../domain/factories/plantFactory";
 
@@ -1095,6 +1095,9 @@ export class SimulationFlow {
         const shops = Array.from(this.plantService.getShops());
         const allStops = Array.from(this.stopService.getStops().values());
 
+        // Build stop index ONCE for O(1) lookups - optimizes from O(n²) to O(n)
+        const stopIndex = this.mttrmtbfService.buildStopIndex(allStops);
+
         const shopResults = new Map<string, MTTRMTBFData[]>();
 
         for (const [_, line] of lines) {
@@ -1102,16 +1105,24 @@ export class SimulationFlow {
             const stationMTTRMTBFData: MTTRMTBFData[] = [];
 
             for (const station of line.stations) {
-                const stationInput: MTTRMTBFCalculationInput = {
-                    shop: station.shop,
-                    line: station.line,
-                    station: station.id,
-                    productionTimeMinutes: productionTimeMinutes,
-                    stops: allStops,
-                    simulatedTimestamp: this.event.simulatedTimestamp
-                };
+                // Get pre-filtered stops from index - O(1) instead of O(n)
+                const stationStops = this.mttrmtbfService.getStopsForStation(
+                    stopIndex,
+                    station.shop,
+                    station.line,
+                    station.id
+                );
 
-                const stationData: MTTRMTBFData = this.mttrmtbfService.calculateStationMTTRMTBF(stationInput);
+                // Use optimized calculation with pre-filtered stops
+                const stationData: MTTRMTBFData = this.mttrmtbfService.calculateStationMTTRMTBFOptimized(
+                    station.shop,
+                    station.line,
+                    station.id,
+                    productionTimeMinutes,
+                    stationStops,
+                    this.event.simulatedTimestamp
+                );
+
                 this.callbacks?.onMTTRMTBFCalculated(stationData);
                 stationMTTRMTBFData.push(stationData);
             }
@@ -1131,9 +1142,7 @@ export class SimulationFlow {
 
             const shopMTTRMTBF = this.mttrmtbfService.calculateShopMTTRMTBF(shopLineData);
             this.callbacks?.onMTTRMTBFCalculated(shopMTTRMTBF);
-
         }
-
     }
 
 

@@ -70,7 +70,7 @@ export class CarEventRepository extends BaseRepository<ICarEvent> {
 
     public async update(id: string | number, entity: Partial<ICarEvent>): Promise<ICarEvent | null> {
         const db = await this.getDb();
-        
+
         const updates: string[] = [];
         const params: any[] = [];
         let paramIndex = 1;
@@ -87,7 +87,14 @@ export class CarEventRepository extends BaseRepository<ICarEvent> {
         if (updates.length === 0) return this.findById(id);
 
         params.push(id);
-        const sql = `UPDATE ${this.tableName} SET ${updates.join(', ')} WHERE id = $${paramIndex} ${this.getReturningClause(db)}`;
+        const returningClause = this.getReturningClause(db);
+        const sql = `UPDATE ${this.tableName} SET ${updates.join(', ')} WHERE id = $${paramIndex}${returningClause}`;
+
+        // PostgreSQL returns updated row directly, SQLite needs separate query
+        if (db.getDialect() === 'postgres') {
+            const result = await db.query<ICarEvent>(this.convertPlaceholders(db, sql), params);
+            return result.rows[0] ? this.normalize(result.rows[0]) : null;
+        }
 
         await db.execute(this.convertPlaceholders(db, sql), params);
         const updated = await this.findById(id);
@@ -116,5 +123,62 @@ export class CarEventRepository extends BaseRepository<ICarEvent> {
 
         const result = await db.query<ICarEvent>(this.convertPlaceholders(db, sql), [shop, line]);
         return result.rows.map(r => this.normalize(r));
+    }
+
+    /**
+     * Optimized batch insert - uses multi-row INSERT for better performance
+     * Significantly faster than individual inserts for large batches
+     */
+    public override async createBatch(entities: Partial<ICarEvent>[]): Promise<ICarEvent[]> {
+        if (entities.length === 0) return [];
+
+        const db = await this.getDb();
+
+        return db.transaction(async () => {
+            const results: ICarEvent[] = [];
+            const batchSize = 100;
+
+            for (let i = 0; i < entities.length; i += batchSize) {
+                const batch = entities.slice(i, i + batchSize);
+
+                if (db.getDialect() === 'postgres') {
+                    // PostgreSQL: Use multi-row VALUES clause
+                    const valuesClauses: string[] = [];
+                    const params: any[] = [];
+                    let paramIndex = 1;
+
+                    for (const entity of batch) {
+                        valuesClauses.push(`($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++})`);
+                        params.push(
+                            entity.car_id,
+                            entity.event_type,
+                            entity.shop,
+                            entity.line,
+                            entity.station,
+                            entity.timestamp,
+                            entity.data ? JSON.stringify(entity.data) : null
+                        );
+                    }
+
+                    const sql = `
+                        INSERT INTO ${this.tableName}
+                        (car_id, event_type, shop, line, station, timestamp, data)
+                        VALUES ${valuesClauses.join(', ')}
+                        RETURNING *
+                    `;
+
+                    const result = await db.query<ICarEvent>(sql, params);
+                    results.push(...result.rows.map(r => this.normalize(r)));
+                } else {
+                    // SQLite: Use individual inserts within transaction (still fast due to transaction)
+                    for (const entity of batch) {
+                        const created = await this.create(entity);
+                        results.push(created);
+                    }
+                }
+            }
+
+            return results;
+        });
     }
 }

@@ -17,6 +17,42 @@ export class CarFactory {
     private static readonly idChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     private static readonly idCharsLen = 36;
 
+    // Performance counters - O(1) lookups instead of O(n) iterations
+    private _completedCount: number = 0;
+    private _defectiveCount: number = 0;
+    private _completedByLine: Map<string, number> = new Map();  // key: "shop-line"
+    private _completedByShop: Map<string, number> = new Map();  // key: "shop"
+
+    // Getters for O(1) access
+    public get completedCount(): number { return this._completedCount; }
+    public get defectiveCount(): number { return this._defectiveCount; }
+
+    public getCompletedByLineCount(shop: string, line: string): number {
+        return this._completedByLine.get(`${shop}-${line}`) || 0;
+    }
+
+    public getCompletedByShopCount(shop: string): number {
+        return this._completedByShop.get(shop) || 0;
+    }
+
+    // Increment methods called when car state changes
+    public incrementCompleted(shop: string, line: string): void {
+        this._completedCount++;
+
+        const lineKey = `${shop}-${line}`;
+        this._completedByLine.set(lineKey, (this._completedByLine.get(lineKey) || 0) + 1);
+        this._completedByShop.set(shop, (this._completedByShop.get(shop) || 0) + 1);
+    }
+
+    public incrementLineExit(shop: string, line: string): void {
+        const lineKey = `${shop}-${line}`;
+        this._completedByLine.set(lineKey, (this._completedByLine.get(lineKey) || 0) + 1);
+    }
+
+    public incrementShopExit(shop: string): void {
+        this._completedByShop.set(shop, (this._completedByShop.get(shop) || 0) + 1);
+    }
+
     public setPlantService(plantService: PlantService): void {
         this.plantService = plantService;
     }
@@ -39,13 +75,14 @@ export class CarFactory {
     public createRandomCar(currentSimulatorTime: number): Car {
         this.currentSequence++;
 
+        const hasDefect = Math.random() * 100 < (this.config?.DPHU ?? 0);
         const newCar = new Car({
             id: this.generateId(),
             sequenceNumber: this.currentSequence,
             model: this.getPlannedModel(),
             color: this.getRandomColor(),
             createdAt: currentSimulatorTime,
-            hasDefect: Math.random() * 100 < (this.config?.DPHU ?? 0),
+            hasDefect,
             inRework: false,
             trace: [],
             shopLeadtimes: [],
@@ -53,6 +90,9 @@ export class CarFactory {
             isPart: false,
             partName: undefined
         });
+
+        if (hasDefect) this._defectiveCount++;
+
         logger().debug(`Carro criado: ID=${newCar.id}, Modelo=${newCar.model}`);
         this.cars.set(newCar.id, newCar);
         return newCar;
@@ -83,13 +123,14 @@ export class CarFactory {
     public createCarWithModel(currentSimulatorTime: number, model: string): Car {
         this.currentSequence++;
 
+        const hasDefect = Math.random() * 100 < (this.config?.DPHU ?? 0);
         const newCar = new Car({
             id: this.generateId(),
             sequenceNumber: this.currentSequence,
             model: model,
             color: this.getRandomColor(),
             createdAt: currentSimulatorTime,
-            hasDefect: Math.random() * 100 < (this.config?.DPHU ?? 0),
+            hasDefect,
             inRework: false,
             trace: [],
             shopLeadtimes: [],
@@ -97,6 +138,9 @@ export class CarFactory {
             isPart: false,
             partName: undefined
         });
+
+        if (hasDefect) this._defectiveCount++;
+
         logger().debug(`Carro criado: ID=${newCar.id}, Modelo=${newCar.model}`);
         this.cars.set(newCar.id, newCar);
 

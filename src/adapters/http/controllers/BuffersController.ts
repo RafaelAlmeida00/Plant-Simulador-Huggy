@@ -30,12 +30,12 @@ export class BuffersController {
 
             // Filtro por range de tempo
             if (start_time && end_time) {
-                const buffers = await this.repository.findByTimeRange(
+                const result = await this.repository.findByTimeRange(
                     parseInt(start_time as string, 10),
                     parseInt(end_time as string, 10)
                 );
-                const data = buffers.map(b => this.enrich(b));
-                res.json({ success: true, data, count: data.length });
+                const data = result.data.map((b: IBufferState) => this.enrich(b));
+                res.json({ success: true, data, count: data.length, truncated: result.truncated });
                 return;
             }
 

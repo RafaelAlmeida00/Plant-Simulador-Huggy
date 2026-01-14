@@ -202,8 +202,15 @@ src/
 
 1. **Throttled Emissions** - WebSocket emits are rate-limited
 2. **Throttled Persistence** - Buffer states: 1-hour, Plant snapshots: 10-second
-3. **Connection Pooling** - PostgreSQL uses connection pools
+3. **Connection Pooling** - PostgreSQL uses connection pools (max: 20, min: 5)
 4. **Memory Monitoring** - Periodic memory usage logging
+5. **HTTP Compression** - gzip compression (level 6, threshold 1KB)
+6. **Rate Limiting** - Global: 100 req/min, Write: 30 req/min, Health: 300 req/min
+7. **WebSocket Compression** - perMessageDeflate enabled (threshold 5KB)
+8. **O(1) Lookups** - Pre-indexed stops for MTTR/MTBF, car counters, PlantSnapshot
+9. **Pagination** - All list endpoints support pagination (max 100 records)
+10. **Batch Inserts** - Transaction-based batch inserts for high-volume data
+11. **Memory Leak Prevention** - Car trace[] limited to 500 entries with auto-trim
 
 ---
 
