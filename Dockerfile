@@ -29,6 +29,7 @@ ENV PORT=7860
 
 ENV NODE_ENV=production
 ENV DATABASE_TYPE=sql
+ENV NODE_OPTIONS=--max-old-space-size=8192
 
 # Copia arquivos do builder
 COPY --from=builder /app/node_modules ./node_modules
@@ -46,4 +47,4 @@ RUN mkdir -p src/adapters/database/test && chmod -R 777 src/adapters/database
 # --- MUDANÇA CRÍTICA AQUI ---
 EXPOSE 7860
 
-CMD ["node", "dist/index.js"]
+CMD ["npm", "run", "serve"]
