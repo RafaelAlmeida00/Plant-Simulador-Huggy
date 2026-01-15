@@ -9,6 +9,7 @@ import { DatabaseFactory } from '../../database/DatabaseFactory';
 import { DeltaService, DeltaResult } from './DeltaService';
 import { BackpressureManager, AckPayload } from './BackpressureManager';
 import { ChunkingService } from './ChunkingService';
+import { setupOptionalSocketAuth } from '../middleware/socketAuth';
 
 export type SimulatorAction = 'pause' | 'restart' | 'stop' | 'start';
 
@@ -87,6 +88,10 @@ export class SocketServer {
             },
             httpCompression: true
         });
+
+        // Setup optional socket authentication middleware
+        // Allows connections without token but attaches user if token is valid
+        setupOptionalSocketAuth(this.io);
 
         this.setupConnectionHandlers();
         this.setupEngineErrorHandlers();
@@ -175,12 +180,14 @@ export class SocketServer {
 
         this.io.on('connection', (socket: Socket) => {
             const conn = socket.conn;
+            const user = socket.user;
             console.log(`[SOCKET] ========== NEW CONNECTION ==========`);
             console.log(`[SOCKET] Client connected: ${socket.id}`);
             console.log(`[SOCKET] Transport: ${conn?.transport?.name || 'unknown'}`);
             console.log(`[SOCKET] Remote address: ${socket.handshake?.address || 'unknown'}`);
             console.log(`[SOCKET] Query params: ${JSON.stringify(socket.handshake?.query || {})}`);
             console.log(`[SOCKET] Headers origin: ${socket.handshake?.headers?.origin || 'unknown'}`);
+            console.log(`[SOCKET] Authenticated user: ${user ? user.email : 'anonymous'}`);
             console.log(`[SOCKET] =====================================`);
 
             // Performance: Initialize subscription tracking for this socket

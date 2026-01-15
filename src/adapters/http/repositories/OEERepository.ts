@@ -86,24 +86,48 @@ export class OEERepository extends BaseRepository<IOEE> {
         return this.findById(id);
     }
 
-    public async findByDate(date: string): Promise<IOEE[]> {
+    public async findByDate(date: string, limit?: number): Promise<IOEE[]> {
         const db = await this.getDb();
-        const sql = `SELECT * FROM ${this.tableName} WHERE date = $1 ORDER BY shop, line`;
-        const result = await db.query<IOEE>(this.convertPlaceholders(db, sql), [date]);
+        let sql = `SELECT * FROM ${this.tableName} WHERE date = $1 ORDER BY shop, line`;
+        const params: any[] = [date];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IOEE>(this.convertPlaceholders(db, sql), params);
         return result.rows;
     }
 
-    public async findByShop(shop: string): Promise<IOEE[]> {
+    public async findByShop(shop: string, limit?: number): Promise<IOEE[]> {
         const db = await this.getDb();
-        const sql = `SELECT * FROM ${this.tableName} WHERE shop = $1 ORDER BY date DESC, line`;
-        const result = await db.query<IOEE>(this.convertPlaceholders(db, sql), [shop]);
+        let sql = `SELECT * FROM ${this.tableName} WHERE shop = $1 ORDER BY date DESC, line`;
+        const params: any[] = [shop];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IOEE>(this.convertPlaceholders(db, sql), params);
         return result.rows;
     }
 
-    public async findByDateAndShop(date: string, shop: string): Promise<IOEE[]> {
+    public async findByDateAndShop(date: string, shop: string, limit?: number): Promise<IOEE[]> {
         const db = await this.getDb();
-        const sql = `SELECT * FROM ${this.tableName} WHERE date = $1 AND shop = $2 ORDER BY line`;
-        const result = await db.query<IOEE>(this.convertPlaceholders(db, sql), [date, shop]);
+        let sql = `SELECT * FROM ${this.tableName} WHERE date = $1 AND shop = $2 ORDER BY line`;
+        const params: any[] = [date, shop];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $3`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IOEE>(this.convertPlaceholders(db, sql), params);
         return result.rows;
     }
 

@@ -117,27 +117,48 @@ export class StopEventRepository extends BaseRepository<IStopEvent> {
         return result.rows[0] || null;
     }
 
-    public async findActiveStops(): Promise<IStopEvent[]> {
+    public async findActiveStops(limit?: number): Promise<IStopEvent[]> {
         const db = await this.getDb();
-        const sql = `SELECT * FROM ${this.tableName} WHERE status = $1 ORDER BY start_time DESC`;
+        let sql = `SELECT * FROM ${this.tableName} WHERE status = $1 ORDER BY start_time DESC`;
+        const params: any[] = ['IN_PROGRESS'];
 
-        const result = await db.query<IStopEvent>(this.convertPlaceholders(db, sql), ['IN_PROGRESS']);
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IStopEvent>(this.convertPlaceholders(db, sql), params);
         return result.rows;
     }
 
-    public async findByShop(shop: string): Promise<IStopEvent[]> {
+    public async findByShop(shop: string, limit?: number): Promise<IStopEvent[]> {
         const db = await this.getDb();
-        const sql = `SELECT * FROM ${this.tableName} WHERE shop = $1 ORDER BY start_time DESC`;
+        let sql = `SELECT * FROM ${this.tableName} WHERE shop = $1 ORDER BY start_time DESC`;
+        const params: any[] = [shop];
 
-        const result = await db.query<IStopEvent>(this.convertPlaceholders(db, sql), [shop]);
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IStopEvent>(this.convertPlaceholders(db, sql), params);
         return result.rows;
     }
 
-    public async findBySeverity(severity: string): Promise<IStopEvent[]> {
+    public async findBySeverity(severity: string, limit?: number): Promise<IStopEvent[]> {
         const db = await this.getDb();
-        const sql = `SELECT * FROM ${this.tableName} WHERE severity = $1 ORDER BY start_time DESC`;
+        let sql = `SELECT * FROM ${this.tableName} WHERE severity = $1 ORDER BY start_time DESC`;
+        const params: any[] = [severity];
 
-        const result = await db.query<IStopEvent>(this.convertPlaceholders(db, sql), [severity]);
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IStopEvent>(this.convertPlaceholders(db, sql), params);
         return result.rows;
     }
 }

@@ -118,11 +118,18 @@ export class BufferStateRepository extends BaseRepository<IBufferState> {
         return updated ? this.normalize(updated) : null;
     }
 
-    public async findByBufferId(bufferId: string): Promise<IBufferState[]> {
+    public async findByBufferId(bufferId: string, limit?: number): Promise<IBufferState[]> {
         const db = await this.getDb();
-        const sql = `SELECT * FROM ${this.tableName} WHERE buffer_id = $1 ORDER BY timestamp DESC`;
+        let sql = `SELECT * FROM ${this.tableName} WHERE buffer_id = $1 ORDER BY timestamp DESC`;
+        const params: any[] = [bufferId];
 
-        const result = await db.query<IBufferState>(this.convertPlaceholders(db, sql), [bufferId]);
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IBufferState>(this.convertPlaceholders(db, sql), params);
         return result.rows.map(r => this.normalize(r));
     }
 
@@ -134,18 +141,25 @@ export class BufferStateRepository extends BaseRepository<IBufferState> {
         return result.rows[0] ? this.normalize(result.rows[0]) : null;
     }
 
-    public async findByStatus(status: string): Promise<IBufferState[]> {
+    public async findByStatus(status: string, limit?: number): Promise<IBufferState[]> {
         const db = await this.getDb();
-        const sql = `SELECT * FROM ${this.tableName} WHERE status = $1 ORDER BY timestamp DESC`;
+        let sql = `SELECT * FROM ${this.tableName} WHERE status = $1 ORDER BY timestamp DESC`;
+        const params: any[] = [status];
 
-        const result = await db.query<IBufferState>(this.convertPlaceholders(db, sql), [status]);
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IBufferState>(this.convertPlaceholders(db, sql), params);
         return result.rows.map(r => this.normalize(r));
     }
 
-    public async findLatestPerBuffer(): Promise<IBufferState[]> {
+    public async findLatestPerBuffer(limit?: number): Promise<IBufferState[]> {
         const db = await this.getDb();
 
-        const sql = `
+        let sql = `
             SELECT b.*
             FROM ${this.tableName} b
             JOIN (
@@ -157,7 +171,15 @@ export class BufferStateRepository extends BaseRepository<IBufferState> {
             ORDER BY b.timestamp DESC
         `;
 
-        const result = await db.query<IBufferState>(sql);
+        const params: any[] = [];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $1`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IBufferState>(this.convertPlaceholders(db, sql), params);
         return result.rows.map(r => this.normalize(r));
     }
 }

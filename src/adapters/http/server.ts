@@ -40,9 +40,9 @@ export class Server {
     private initializeMiddlewares() {
         // CORS - allow all origins for development
         this.app.use(cors({
-            origin: '*',
+            origin: ['http://localhost:3000', 'http://localhost:3001', 'https://simulador-ui.vercel.app'],
             methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-            allowedHeaders: ['Content-Type', 'Authorization']
+            allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token']
         }));
 
         // Compression - compress responses > 1KB with level 6

@@ -1,7 +1,7 @@
 // src/adapters/http/controllers/OEEController.ts
 
 import { Request, Response } from 'express';
-import { OEERepository, IOEE } from '../../database/repositories/OEERepository';
+import { OEERepository, IOEE } from '../repositories/OEERepository';
 
 export class OEEController {
     private repository: OEERepository;

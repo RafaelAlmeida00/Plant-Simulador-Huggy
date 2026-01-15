@@ -1,7 +1,7 @@
 // src/adapters/http/controllers/BuffersController.ts
 
 import { Request, Response } from 'express';
-import { BufferStateRepository, IBufferState } from '../../database/repositories/BufferStateRepository';
+import { BufferStateRepository, IBufferState } from '../repositories/BufferStateRepository';
 
 export class BuffersController {
     private repository: BufferStateRepository;

@@ -1,3 +1,6 @@
+// Load environment variables BEFORE any other imports
+import 'dotenv/config';
+
 import { Server } from "./adapters/http/server";
 import { SimulationFactory } from "./domain/factories/SimulationFactory";
 import { simulationEventEmitter } from "./app/SimulationEventEmitter";

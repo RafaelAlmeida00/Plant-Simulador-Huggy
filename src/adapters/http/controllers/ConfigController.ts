@@ -1,7 +1,7 @@
 // src/adapters/http/controllers/ConfigController.ts
 
 import { Request, Response } from 'express';
-import { ConfigPlantRepository, IConfigPlant } from '../../database/repositories/ConfigPlantRepository';
+import { ConfigPlantRepository, IConfigPlant } from '../repositories/ConfigPlantRepository';
 import { randomUUID } from 'crypto';
 
 export class ConfigController {

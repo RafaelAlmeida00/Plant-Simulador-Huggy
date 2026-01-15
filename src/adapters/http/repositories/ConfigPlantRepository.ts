@@ -1,7 +1,7 @@
 // src/adapters/database/repositories/ConfigPlantRepository.ts
 
-import { IDatabase } from '../IDatabase';
-import { DatabaseFactory } from '../DatabaseFactory';
+import { IDatabase } from '../../database/IDatabase';
+import { DatabaseFactory } from '../../database/DatabaseFactory';
 
 export interface IConfigPlant {
     id: string;
@@ -38,10 +38,18 @@ export class ConfigPlantRepository {
     }
 
     // Busca todas as configurações
-    public async findAll(): Promise<IConfigPlant[]> {
+    public async findAll(limit?: number): Promise<IConfigPlant[]> {
         const db = await this.getDb();
-        const sql = `SELECT * FROM ${this.tableName} ORDER BY created_at DESC`;
-        const result = await db.query<any>(sql);
+        let sql = `SELECT * FROM ${this.tableName} ORDER BY created_at DESC`;
+        const params: any[] = [];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $1`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<any>(this.convertPlaceholders(db, sql), params);
         return result.rows.map(r => this.normalize(r));
     }
 

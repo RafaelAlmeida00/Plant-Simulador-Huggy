@@ -468,9 +468,9 @@ export class SimulationFlow {
             !nextStation.isFirstCar &&
             nextStation.stopId) {
             this.stopService.endStop(Number(nextStation.stopId), this.event.simulatedTimestamp);
-            const stop = this.stopService.getStopById(Number(currentStation.stopId)) as IStopLine;
+            const stop = this.stopService.getStopById(Number(nextStation.stopId)) as IStopLine;
             if (!stop) {
-                logger().error(`Stop not found with id ${currentStation.stopId}`);
+                logger().error(`Stop not found with id ${nextStation.stopId}`);
                 return
             }
             this.notifyStopEnded(stop);

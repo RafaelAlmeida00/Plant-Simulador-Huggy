@@ -1,7 +1,7 @@
 // src/adapters/http/controllers/StopsController.ts
 
 import { Request, Response } from 'express';
-import { StopEventRepository, IStopEvent } from '../../database/repositories/StopEventRepository';
+import { StopEventRepository, IStopEvent } from '../repositories/StopEventRepository';
 
 export class StopsController {
     private repository: StopEventRepository;

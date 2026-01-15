@@ -1,7 +1,7 @@
 // src/adapters/http/controllers/EventsController.ts
 
 import { Request, Response } from 'express';
-import { CarEventRepository, ICarEvent } from '../../database/repositories/CarEventRepository';
+import { CarEventRepository, ICarEvent } from '../repositories/CarEventRepository';
 
 export class EventsController {
     private repository: CarEventRepository;

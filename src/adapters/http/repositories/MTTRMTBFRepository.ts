@@ -82,38 +82,78 @@ export class MTTRMTBFRepository extends BaseRepository<IMTTRMTBF> {
         return this.findById(id);
     }
 
-    public async findByDate(date: string): Promise<IMTTRMTBF[]> {
+    public async findByDate(date: string, limit?: number): Promise<IMTTRMTBF[]> {
         const db = await this.getDb();
-        const sql = `SELECT * FROM ${this.tableName} WHERE date = $1 ORDER BY shop, line, station`;
-        const result = await db.query<IMTTRMTBF>(this.convertPlaceholders(db, sql), [date]);
+        let sql = `SELECT * FROM ${this.tableName} WHERE date = $1 ORDER BY shop, line, station`;
+        const params: any[] = [date];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IMTTRMTBF>(this.convertPlaceholders(db, sql), params);
         return result.rows;
     }
 
-    public async findByShop(shop: string): Promise<IMTTRMTBF[]> {
+    public async findByShop(shop: string, limit?: number): Promise<IMTTRMTBF[]> {
         const db = await this.getDb();
-        const sql = `SELECT * FROM ${this.tableName} WHERE shop = $1 ORDER BY date DESC, line, station`;
-        const result = await db.query<IMTTRMTBF>(this.convertPlaceholders(db, sql), [shop]);
+        let sql = `SELECT * FROM ${this.tableName} WHERE shop = $1 ORDER BY date DESC, line, station`;
+        const params: any[] = [shop];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IMTTRMTBF>(this.convertPlaceholders(db, sql), params);
         return result.rows;
     }
 
-    public async findByDateAndShop(date: string, shop: string): Promise<IMTTRMTBF[]> {
+    public async findByDateAndShop(date: string, shop: string, limit?: number): Promise<IMTTRMTBF[]> {
         const db = await this.getDb();
-        const sql = `SELECT * FROM ${this.tableName} WHERE date = $1 AND shop = $2 ORDER BY line, station`;
-        const result = await db.query<IMTTRMTBF>(this.convertPlaceholders(db, sql), [date, shop]);
+        let sql = `SELECT * FROM ${this.tableName} WHERE date = $1 AND shop = $2 ORDER BY line, station`;
+        const params: any[] = [date, shop];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $3`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IMTTRMTBF>(this.convertPlaceholders(db, sql), params);
         return result.rows;
     }
 
-    public async findByLine(shop: string, line: string): Promise<IMTTRMTBF[]> {
+    public async findByLine(shop: string, line: string, limit?: number): Promise<IMTTRMTBF[]> {
         const db = await this.getDb();
-        const sql = `SELECT * FROM ${this.tableName} WHERE shop = $1 AND line = $2 ORDER BY date DESC, station`;
-        const result = await db.query<IMTTRMTBF>(this.convertPlaceholders(db, sql), [shop, line]);
+        let sql = `SELECT * FROM ${this.tableName} WHERE shop = $1 AND line = $2 ORDER BY date DESC, station`;
+        const params: any[] = [shop, line];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $3`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IMTTRMTBF>(this.convertPlaceholders(db, sql), params);
         return result.rows;
     }
 
-    public async findByStation(shop: string, line: string, station: string): Promise<IMTTRMTBF[]> {
+    public async findByStation(shop: string, line: string, station: string, limit?: number): Promise<IMTTRMTBF[]> {
         const db = await this.getDb();
-        const sql = `SELECT * FROM ${this.tableName} WHERE shop = $1 AND line = $2 AND station = $3 ORDER BY date DESC`;
-        const result = await db.query<IMTTRMTBF>(this.convertPlaceholders(db, sql), [shop, line, station]);
+        let sql = `SELECT * FROM ${this.tableName} WHERE shop = $1 AND line = $2 AND station = $3 ORDER BY date DESC`;
+        const params: any[] = [shop, line, station];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $4`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IMTTRMTBF>(this.convertPlaceholders(db, sql), params);
         return result.rows;
     }
 }

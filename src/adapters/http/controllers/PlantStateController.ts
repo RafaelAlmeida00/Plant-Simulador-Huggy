@@ -1,7 +1,7 @@
 // src/adapters/http/controllers/PlantStateController.ts
 
 import { Request, Response } from 'express';
-import { PlantSnapshotRepository, IPlantSnapshotRecord } from '../../database/repositories/PlantSnapshotRepository';
+import { PlantSnapshotRepository, IPlantSnapshotRecord } from '../repositories/PlantSnapshotRepository';
 
 export class PlantStateController {
     private repository: PlantSnapshotRepository;

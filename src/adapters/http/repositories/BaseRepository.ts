@@ -1,7 +1,7 @@
 // src/adapters/database/repositories/BaseRepository.ts
 
-import { IDatabase, IRepository, QueryResult } from '../IDatabase';
-import { DatabaseFactory } from '../DatabaseFactory';
+import { IDatabase, IRepository, QueryResult } from '../../database/IDatabase';
+import { DatabaseFactory } from '../../database/DatabaseFactory';
 import { PaginationParams, PaginatedResult, QueryOptions, TimeRangeResult } from '../../../utils/shared';
 
 export abstract class BaseRepository<T> implements IRepository<T> {
@@ -21,18 +21,18 @@ export abstract class BaseRepository<T> implements IRepository<T> {
         return DatabaseFactory.getDatabase();
     }
 
-    public async findAll(filters?: Record<string, any>): Promise<T[]> {
+    public async findAll(filters?: Record<string, any>, limit?: number): Promise<T[]> {
         const db = await this.getDb();
-        
+
         let sql = `SELECT * FROM ${this.tableName}`;
         const params: any[] = [];
-        
+        let paramIndex = 1;
+
         if (filters && Object.keys(filters).length > 0) {
             const whereClauses: string[] = [];
-            let paramIndex = 1;
 
             const allowed = new Set(this.allowedFilterColumns());
-            
+
             for (const [key, value] of Object.entries(filters)) {
                 if (value !== undefined && value !== null) {
                     if (!allowed.has(key)) {
@@ -43,13 +43,19 @@ export abstract class BaseRepository<T> implements IRepository<T> {
                     paramIndex++;
                 }
             }
-            
+
             if (whereClauses.length > 0) {
                 sql += ` WHERE ${whereClauses.join(' AND ')}`;
             }
         }
-        
+
         sql += ` ORDER BY ${this.timestampColumn} DESC`;
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $${paramIndex}`;
+            params.push(safeLimit);
+        }
 
         const result = await db.query<T>(this.convertPlaceholders(db, sql), params);
         return result.rows.map(r => this.normalize(r));

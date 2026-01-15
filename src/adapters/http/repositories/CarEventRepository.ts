@@ -101,27 +101,48 @@ export class CarEventRepository extends BaseRepository<ICarEvent> {
         return updated ? this.normalize(updated) : null;
     }
 
-    public async findByCarId(carId: string): Promise<ICarEvent[]> {
+    public async findByCarId(carId: string, limit?: number): Promise<ICarEvent[]> {
         const db = await this.getDb();
-        const sql = `SELECT * FROM ${this.tableName} WHERE car_id = $1 ORDER BY timestamp DESC`;
+        let sql = `SELECT * FROM ${this.tableName} WHERE car_id = $1 ORDER BY timestamp DESC`;
+        const params: any[] = [carId];
 
-        const result = await db.query<ICarEvent>(this.convertPlaceholders(db, sql), [carId]);
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<ICarEvent>(this.convertPlaceholders(db, sql), params);
         return result.rows.map(r => this.normalize(r));
     }
 
-    public async findByShop(shop: string): Promise<ICarEvent[]> {
+    public async findByShop(shop: string, limit?: number): Promise<ICarEvent[]> {
         const db = await this.getDb();
-        const sql = `SELECT * FROM ${this.tableName} WHERE shop = $1 ORDER BY timestamp DESC`;
+        let sql = `SELECT * FROM ${this.tableName} WHERE shop = $1 ORDER BY timestamp DESC`;
+        const params: any[] = [shop];
 
-        const result = await db.query<ICarEvent>(this.convertPlaceholders(db, sql), [shop]);
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<ICarEvent>(this.convertPlaceholders(db, sql), params);
         return result.rows.map(r => this.normalize(r));
     }
 
-    public async findByLine(shop: string, line: string): Promise<ICarEvent[]> {
+    public async findByLine(shop: string, line: string, limit?: number): Promise<ICarEvent[]> {
         const db = await this.getDb();
-        const sql = `SELECT * FROM ${this.tableName} WHERE shop = $1 AND line = $2 ORDER BY timestamp DESC`;
+        let sql = `SELECT * FROM ${this.tableName} WHERE shop = $1 AND line = $2 ORDER BY timestamp DESC`;
+        const params: any[] = [shop, line];
 
-        const result = await db.query<ICarEvent>(this.convertPlaceholders(db, sql), [shop, line]);
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $3`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<ICarEvent>(this.convertPlaceholders(db, sql), params);
         return result.rows.map(r => this.normalize(r));
     }
 

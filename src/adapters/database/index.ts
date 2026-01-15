@@ -5,4 +5,4 @@ export { DatabaseConfigFactory, IDatabaseConfig, DatabaseType } from './Database
 export { DatabaseFactory } from './DatabaseFactory';
 export { SQLiteDatabase } from './SQLiteDatabase';
 export { PostgresDatabase } from './PostgresDatabase';
-export * from './repositories';
+export * from '../http/repositories';

@@ -9,7 +9,7 @@ import {
     PlantSnapshotRepository,
     OEERepository,
     MTTRMTBFRepository
-} from '../adapters/database/repositories';
+} from '../adapters/http/repositories';
 import { getActiveFlowPlant } from '../domain/factories/plantFactory';
 
 export class SimulationEventEmitter {

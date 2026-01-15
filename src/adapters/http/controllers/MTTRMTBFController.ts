@@ -1,7 +1,7 @@
 // src/adapters/http/controllers/MTTRMTBFController.ts
 
 import { Request, Response } from 'express';
-import { MTTRMTBFRepository, IMTTRMTBF } from '../../database/repositories/MTTRMTBFRepository';
+import { MTTRMTBFRepository, IMTTRMTBF } from '../repositories/MTTRMTBFRepository';
 
 export class MTTRMTBFController {
     private repository: MTTRMTBFRepository;

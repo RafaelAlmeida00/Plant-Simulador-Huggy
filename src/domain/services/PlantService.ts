@@ -1,6 +1,6 @@
 // src/domain/services/PlantService.ts
 
-import { ConfigPlantRepository } from "../../adapters/database/repositories/ConfigPlantRepository";
+import { ConfigPlantRepository } from "../../adapters/http/repositories/ConfigPlantRepository";
 import { logger } from "../../utils/logger";
 import { ICar, IFlowPlant, ILine, IShop, IStation, IStopLine, PlantSnapshot, StationLocation } from "../../utils/shared";
 import { FlowPlant } from "../config/flowPlant";
