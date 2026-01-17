@@ -8,7 +8,9 @@
     "build": "tsc",
     "serve": "NODE_OPTIONS=--max-old-space-size=8192 node dist/index.js",
     "watch": "set NODE_OPTIONS=--max-old-space-size=8192 && nodemon src/index.ts",
-    "validate:env": "ts-node scripts/validate-env.ts"
+    "validate:env": "ts-node scripts/validate-env.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
@@ -28,7 +30,8 @@
     "@types/swagger-ui-express": "^4.1.8",
     "nodemon": "^3.1.11",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.17"
   },
   "dependencies": {
     "@msgpack/msgpack": "^3.1.3",

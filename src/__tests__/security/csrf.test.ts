@@ -1,18 +1,16 @@
 // src/__tests__/security/csrf.test.ts
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 describe('CSRF Protection', () => {
-    const originalEnv = process.env;
+    const originalEnv = { ...process.env };
 
     beforeEach(() => {
-        process.env = { ...originalEnv };
-        // Clear module cache to reload with new env
-        jest.resetModules?.() || vi.resetModules?.();
+        vi.resetModules();
     });
 
     afterEach(() => {
-        process.env = originalEnv;
+        process.env = { ...originalEnv };
     });
 
     describe('Configuration Validation', () => {

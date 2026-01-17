@@ -3,15 +3,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 describe('Security Environment Validation', () => {
-    const originalEnv = process.env;
+    const originalEnv = { ...process.env };
 
     beforeEach(() => {
-        process.env = { ...originalEnv };
-        vi.resetModules?.();
+        vi.resetModules();
     });
 
     afterEach(() => {
-        process.env = originalEnv;
+        process.env = { ...originalEnv };
     });
 
     describe('validateSecurityEnvironment', () => {
@@ -22,7 +21,7 @@ describe('Security Environment Validation', () => {
 
             const { validateSecurityEnvironment } = await import('../../config/security-config');
 
-            expect(() => validateSecurityEnvironment()).toThrow('Environment validation failed');
+            expect(() => validateSecurityEnvironment()).toThrow('Application cannot start with invalid security configuration');
         });
 
         it('should pass when optional vars are missing', async () => {
