@@ -2,6 +2,7 @@
 
 import { Request, Response } from 'express';
 import { StopEventRepository, IStopEvent } from '../repositories/StopEventRepository';
+import { parsePaginationParams, formatPaginatedResponse, createPaginatedResponse, paginateArray } from '../../../utils/pagination';
 
 export class StopsController {
     private repository: StopEventRepository;
@@ -10,65 +11,61 @@ export class StopsController {
         this.repository = new StopEventRepository();
     }
 
-    // GET /api/stops - Lista todas as paradas com filtros opcionais
+    // GET /api/stops - Lista todas as paradas com filtros opcionais e paginação
     public async getAll(req: Request, res: Response): Promise<void> {
         try {
             const { stop_id, shop, line, station, severity, status, type, start_time, end_time } = req.query;
+            const pagination = parsePaginationParams(req.query);
 
-            // Filtro por range de tempo
+            // Filtro por range de tempo (with pagination)
             if (start_time && end_time) {
                 const result = await this.repository.findByTimeRange(
                     parseInt(start_time as string, 10),
                     parseInt(end_time as string, 10)
                 );
-                res.json({ success: true, data: result.data, count: result.data.length, truncated: result.truncated });
+                // Apply in-memory pagination to time range results
+                const paginatedData = paginateArray(result.data, pagination);
+                res.json(createPaginatedResponse(paginatedData, pagination, result.data.length));
                 return;
             }
 
-            // Filtros específicos
+            // Filtro por stop_id específico (retorna single result, no pagination needed)
             if (stop_id) {
                 const stop = await this.repository.findByStopId(stop_id as string);
-                res.json({ success: true, data: stop ? [stop] : [], count: stop ? 1 : 0 });
+                res.json(createPaginatedResponse(stop ? [stop] : [], pagination, stop ? 1 : 0));
                 return;
             }
 
-            if (status === 'IN_PROGRESS') {
-                const stops = await this.repository.findActiveStops();
-                res.json({ success: true, data: stops, count: stops.length });
-                return;
-            }
-
-            if (severity) {
-                const stops = await this.repository.findBySeverity(severity as string);
-                res.json({ success: true, data: stops, count: stops.length });
-                return;
-            }
-
-            if (shop) {
-                const stops = await this.repository.findByShop(shop as string);
-                res.json({ success: true, data: stops, count: stops.length });
-                return;
-            }
-
-            // Filtros genéricos
+            // Build filters object for paginated query
             const filters: Record<string, any> = {};
+            if (shop) filters.shop = shop;
             if (line) filters.line = line;
             if (station) filters.station = station;
-            if (type) filters.type = type;
+            if (severity) filters.severity = severity;
             if (status) filters.status = status;
+            if (type) filters.type = type;
 
-            const stops = await this.repository.findAll(Object.keys(filters).length > 0 ? filters : undefined);
-            res.json({ success: true, data: stops, count: stops.length });
+            // Use paginated query with all filters
+            const result = await this.repository.findAllPaginated(
+                pagination,
+                Object.keys(filters).length > 0 ? filters : undefined
+            );
+            res.json(formatPaginatedResponse(result));
         } catch (error: any) {
             res.status(500).json({ success: false, error: error.message });
         }
     }
 
-    // GET /api/stops/active - Retorna apenas paradas ativas
+    // GET /api/stops/active - Retorna apenas paradas ativas com paginação
     public async getActive(req: Request, res: Response): Promise<void> {
         try {
-            const stops = await this.repository.findActiveStops();
-            res.json({ success: true, data: stops, count: stops.length });
+            const pagination = parsePaginationParams(req.query);
+            // Use paginated query with status filter
+            const result = await this.repository.findAllPaginated(
+                pagination,
+                { status: 'IN_PROGRESS' }
+            );
+            res.json(formatPaginatedResponse(result));
         } catch (error: any) {
             res.status(500).json({ success: false, error: error.message });
         }

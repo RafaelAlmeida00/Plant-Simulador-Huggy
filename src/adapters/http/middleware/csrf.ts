@@ -11,14 +11,41 @@ interface CsrfCache {
 let csrfCache: CsrfCache | null = null;
 const CSRF_CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
 
-// NextAuth CSRF endpoint
-const NEXTAUTH_CSRF_URL = process.env.NEXTAUTH_CSRF_URL || 'https://simulador-ui.vercel.app/api/auth/csrf';
+// NextAuth CSRF endpoint - no type assertion, allow undefined
+const NEXTAUTH_CSRF_URL = process.env.NEXTAUTH_CSRF_URL;
+
+/**
+ * Validates CSRF configuration at startup
+ * Should be called during bootstrap - fails fast if misconfigured
+ */
+export function validateCsrfConfig(): void {
+    if (!NEXTAUTH_CSRF_URL) {
+        throw new Error(
+            '[SECURITY FATAL] NEXTAUTH_CSRF_URL not configured. ' +
+            'CSRF protection cannot be initialized. Set the environment variable or disable CSRF middleware.'
+        );
+    }
+
+    // Validate URL format
+    try {
+        new URL(NEXTAUTH_CSRF_URL);
+    } catch {
+        throw new Error(
+            `[SECURITY FATAL] NEXTAUTH_CSRF_URL is not a valid URL: "${NEXTAUTH_CSRF_URL.substring(0, 50)}..."`
+        );
+    }
+}
 
 /**
  * Fetches the current valid CSRF token from NextAuth
  * Uses caching to avoid excessive requests
  */
 async function fetchValidCsrfToken(): Promise<string | null> {
+    // Defense-in-depth: should have been validated at startup
+    if (!NEXTAUTH_CSRF_URL) {
+        return null;
+    }
+
     // Check cache first
     if (csrfCache && Date.now() < csrfCache.expiresAt) {
         return csrfCache.token;
@@ -67,10 +94,14 @@ export async function csrfMiddleware(req: Request, res: Response, next: NextFunc
         return;
     }
 
-    // Skip if NEXTAUTH_CSRF_URL is not configured
+    // FAIL-CLOSED: Block requests if CSRF is not configured (defense-in-depth)
+    // This should never happen if validateCsrfConfig() was called at startup
     if (!NEXTAUTH_CSRF_URL) {
-        console.warn('[CSRF] NEXTAUTH_CSRF_URL not configured - skipping CSRF validation');
-        next();
+        console.error('[CSRF] NEXTAUTH_CSRF_URL not configured - blocking request');
+        res.status(503).json({
+            error: 'Service temporarily unavailable',
+            code: 'SECURITY_CONFIG_ERROR'
+        });
         return;
     }
 

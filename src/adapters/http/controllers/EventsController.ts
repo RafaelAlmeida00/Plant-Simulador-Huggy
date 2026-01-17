@@ -2,6 +2,7 @@
 
 import { Request, Response } from 'express';
 import { CarEventRepository, ICarEvent } from '../repositories/CarEventRepository';
+import { parsePaginationParams, formatPaginatedResponse, createPaginatedResponse, paginateArray } from '../../../utils/pagination';
 
 export class EventsController {
     private repository: CarEventRepository;
@@ -10,47 +11,38 @@ export class EventsController {
         this.repository = new CarEventRepository();
     }
 
-    // GET /api/events - Lista todos os eventos com filtros opcionais
+    // GET /api/events - Lista todos os eventos com filtros opcionais e paginação
     public async getAll(req: Request, res: Response): Promise<void> {
         try {
             const { car_id, shop, line, station, event_type, start_time, end_time } = req.query;
+            const pagination = parsePaginationParams(req.query);
 
-            // Filtro por range de tempo
+            // Filtro por range de tempo (with pagination)
             if (start_time && end_time) {
                 const result = await this.repository.findByTimeRange(
                     parseInt(start_time as string, 10),
                     parseInt(end_time as string, 10)
                 );
-                res.json({ success: true, data: result.data, count: result.data.length, truncated: result.truncated });
+                // Apply in-memory pagination to time range results
+                const paginatedData = paginateArray(result.data, pagination);
+                res.json(createPaginatedResponse(paginatedData, pagination, result.data.length));
                 return;
             }
 
-            // Filtros específicos
-            if (car_id) {
-                const events = await this.repository.findByCarId(car_id as string);
-                res.json({ success: true, data: events, count: events.length });
-                return;
-            }
-
-            if (shop && line) {
-                const events = await this.repository.findByLine(shop as string, line as string);
-                res.json({ success: true, data: events, count: events.length });
-                return;
-            }
-
-            if (shop) {
-                const events = await this.repository.findByShop(shop as string);
-                res.json({ success: true, data: events, count: events.length });
-                return;
-            }
-
-            // Filtros genéricos
+            // Build filters object for paginated query
             const filters: Record<string, any> = {};
-            if (event_type) filters.event_type = event_type;
+            if (car_id) filters.car_id = car_id;
+            if (shop) filters.shop = shop;
+            if (line) filters.line = line;
             if (station) filters.station = station;
+            if (event_type) filters.event_type = event_type;
 
-            const events = await this.repository.findAll(Object.keys(filters).length > 0 ? filters : undefined);
-            res.json({ success: true, data: events, count: events.length });
+            // Use paginated query with all filters
+            const result = await this.repository.findAllPaginated(
+                pagination,
+                Object.keys(filters).length > 0 ? filters : undefined
+            );
+            res.json(formatPaginatedResponse(result));
         } catch (error: any) {
             res.status(500).json({ success: false, error: error.message });
         }

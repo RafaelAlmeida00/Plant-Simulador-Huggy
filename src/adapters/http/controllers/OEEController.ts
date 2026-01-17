@@ -2,6 +2,7 @@
 
 import { Request, Response } from 'express';
 import { OEERepository, IOEE } from '../repositories/OEERepository';
+import { parsePaginationParams, formatPaginatedResponse, createPaginatedResponse, paginateArray } from '../../../utils/pagination';
 
 export class OEEController {
     private repository: OEERepository;
@@ -10,56 +11,47 @@ export class OEEController {
         this.repository = new OEERepository();
     }
 
-    // GET /api/oee - Lista todos os registros de OEE com filtros opcionais
+    // GET /api/oee - Lista todos os registros de OEE com filtros opcionais e paginação
     public async getAll(req: Request, res: Response): Promise<void> {
         try {
             const { date, shop, line, start_time, end_time } = req.query;
+            const pagination = parsePaginationParams(req.query);
 
-            // Filtro por range de tempo
+            // Filtro por range de tempo (with pagination)
             if (start_time && end_time) {
                 const result = await this.repository.findByTimeRange(
                     parseInt(start_time as string, 10),
                     parseInt(end_time as string, 10)
                 );
-                res.json({ success: true, data: result.data, count: result.data.length, truncated: result.truncated });
+                // Apply in-memory pagination to time range results
+                const paginatedData = paginateArray(result.data, pagination);
+                res.json(createPaginatedResponse(paginatedData, pagination, result.data.length));
                 return;
             }
 
-            // Filtro por data, shop e linha
+            // Filtro por data, shop e linha (single result, no pagination needed)
             if (date && shop && line) {
                 const record = await this.repository.findByDateShopLine(
                     date as string,
                     shop as string,
                     line as string
                 );
-                res.json({ success: true, data: record ? [record] : [], count: record ? 1 : 0 });
+                res.json(createPaginatedResponse(record ? [record] : [], pagination, record ? 1 : 0));
                 return;
             }
 
-            // Filtro por data e shop
-            if (date && shop) {
-                const records = await this.repository.findByDateAndShop(date as string, shop as string);
-                res.json({ success: true, data: records, count: records.length });
-                return;
-            }
+            // Build filters object for paginated query
+            const filters: Record<string, any> = {};
+            if (date) filters.date = date;
+            if (shop) filters.shop = shop;
+            if (line) filters.line = line;
 
-            // Filtro por data
-            if (date) {
-                const records = await this.repository.findByDate(date as string);
-                res.json({ success: true, data: records, count: records.length });
-                return;
-            }
-
-            // Filtro por shop
-            if (shop) {
-                const records = await this.repository.findByShop(shop as string);
-                res.json({ success: true, data: records, count: records.length });
-                return;
-            }
-
-            // Sem filtros - retorna todos
-            const records = await this.repository.findAll();
-            res.json({ success: true, data: records, count: records.length });
+            // Use paginated query with all filters
+            const result = await this.repository.findAllPaginated(
+                pagination,
+                Object.keys(filters).length > 0 ? filters : undefined
+            );
+            res.json(formatPaginatedResponse(result));
         } catch (error: any) {
             res.status(500).json({ success: false, error: error.message });
         }

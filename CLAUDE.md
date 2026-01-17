@@ -505,6 +505,7 @@ src/
 │       └── MTTRMTBFService.ts
 └── utils/                             # Utilities
     ├── shared.ts                      # TypeScript interfaces
+    ├── pagination.ts                  # Pagination utilities
     ├── logger.ts                      # Pino logging
     ├── clock.ts                       # Time utilities
     └── restartDB.ts                   # Database reset
@@ -612,6 +613,61 @@ interface IStopLine {
 | `/api/mttr-mtbf` | GET | MTTR/MTBF metrics |
 | `/api/config` | GET, POST, PUT | Plant configuration management |
 | `/api/health` | GET | System health status |
+
+---
+
+## API Pagination
+
+All list endpoints (`/api/events`, `/api/stops`, `/api/oee`) support server-side pagination.
+
+### Query Parameters
+
+| Parameter | Type | Default | Max | Description |
+|-----------|------|---------|-----|-------------|
+| `page` | number | 1 | - | Page number (1-based) |
+| `limit` | number | 50 | 100 | Items per page |
+
+### Response Format
+
+```typescript
+{
+  success: boolean,
+  data: T[],
+  pagination: {
+    page: number,
+    limit: number,
+    total: number,
+    totalPages: number,
+    hasNext: boolean,
+    hasPrevious: boolean
+  },
+  count: number  // Items in current page
+}
+```
+
+### Examples
+
+```bash
+# Get first page with 20 items
+GET /api/events?page=1&limit=20
+
+# Get page 2 filtered by shop
+GET /api/events?shop=Body&page=2&limit=50
+
+# Get active stops with pagination
+GET /api/stops?status=IN_PROGRESS&page=1&limit=10
+```
+
+### Pagination Utility
+
+Located at `src/utils/pagination.ts`:
+
+| Function | Purpose |
+|----------|---------|
+| `parsePaginationParams(query)` | Parse and validate page/limit from request query |
+| `formatPaginatedResponse(result)` | Format `PaginatedResult` for HTTP response |
+| `createPaginatedResponse(data, pagination, total)` | Create paginated response from array |
+| `paginateArray(data, pagination)` | Apply in-memory pagination to array |
 
 ---
 
@@ -739,4 +795,4 @@ DB_TYPE=sqlite npm run dev
 
 * If you are a IA or is a IA Claude Model by Anthropic, update this file always that you make a edit and get new informations about the project, change the architeture, logic and rules of the simulator. Read and do the command on file TIMELINE.md. Also, update the data change below:
 
-*Last updated: 2026-01-14 10:00:00*
+*Last updated: 2026-01-15 12:00:00*

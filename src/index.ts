@@ -11,6 +11,7 @@ import { OEEData } from "./utils/shared";
 import { MTTRMTBFData } from "./utils/shared";
 import { IStopLine } from "./utils/shared";
 import { logger } from "./utils/logger";
+import { validateSecurityEnvironment } from "./config/security-config";
 
 const serverStartTime = Date.now();
 
@@ -147,6 +148,11 @@ async function main(): Promise<void> {
     startMemoryLogging();
 
     logger().info('[BOOT] Starting simulation server...');
+
+    // Security validation FIRST - fail fast if misconfigured
+    logger().info('[BOOT] Validating security environment...');
+    validateSecurityEnvironment();
+
     // Primeiro processo do boot: banco (inclui criação de tabelas via connect()).
     await DatabaseFactory.getDatabase();
 

@@ -7,7 +7,8 @@
     "start": "NODE_OPTIONS=--max-old-space-size=8192 ts-node src/index.ts",
     "build": "tsc",
     "serve": "NODE_OPTIONS=--max-old-space-size=8192 node dist/index.js",
-    "watch": "set NODE_OPTIONS=--max-old-space-size=8192 && nodemon src/index.ts"
+    "watch": "set NODE_OPTIONS=--max-old-space-size=8192 && nodemon src/index.ts",
+    "validate:env": "ts-node scripts/validate-env.ts"
   },
   "keywords": [],
   "author": "",

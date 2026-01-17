@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx ts-node:*)",
+      "Bash(DATABASE_URL=\"postgresql://localhost:5432/simulator_test\" NODE_ENV=\"development\" npx ts-node:*)"
+    ]
+  }
+}

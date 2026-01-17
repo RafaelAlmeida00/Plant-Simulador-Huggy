@@ -79,13 +79,11 @@ export class OEEFactory {
         const shiftStartTs = dayStart + (startHour * 60 + startMinute) * 60 * 1000;
 
         const shop: IShop = input.shop as IShop;
-        const shopLines = this.plantService.getLinesOfShop(shop.name);
-        const numLines = shopLines.length;
         const totalCarsProduction = this.carsService.getCompletedCardByShopCount(shop);
 
         // Para shop com linhas paralelas: dividir carsProduction pelo número de linhas
         // para obter média por linha, já que productionTime é a MÉDIA das linhas
-        const carsProduction = totalCarsProduction / numLines;
+        const carsProduction = totalCarsProduction;
 
         const productionTime = input.productionTimeMinutes;
         const taktTime = input.taktTimeMinutes;
