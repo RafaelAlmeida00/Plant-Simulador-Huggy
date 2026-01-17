@@ -76,7 +76,7 @@ export class MTTRMTBFController {
     public async getById(req: Request, res: Response): Promise<void> {
         try {
             const { id } = req.params;
-            const record = await this.repository.findById(parseInt(id, 10));
+            const record = await this.repository.findById(parseInt(String(id), 10));
             
             if (!record) {
                 res.status(404).json({ success: false, error: 'MTTR/MTBF record not found' });
@@ -116,7 +116,7 @@ export class MTTRMTBFController {
             const { id } = req.params;
             const data: Partial<IMTTRMTBF> = req.body;
             
-            const record = await this.repository.update(parseInt(id, 10), data);
+            const record = await this.repository.update(parseInt(String(id), 10), data);
             
             if (!record) {
                 res.status(404).json({ success: false, error: 'MTTR/MTBF record not found' });
@@ -133,7 +133,7 @@ export class MTTRMTBFController {
     public async delete(req: Request, res: Response): Promise<void> {
         try {
             const { id } = req.params;
-            const deleted = await this.repository.delete(parseInt(id, 10));
+            const deleted = await this.repository.delete(parseInt(String(id), 10));
             
             if (!deleted) {
                 res.status(404).json({ success: false, error: 'MTTR/MTBF record not found' });

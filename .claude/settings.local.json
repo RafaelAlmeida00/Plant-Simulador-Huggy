@@ -6,7 +6,8 @@
       "Bash(npx ts-node:*)",
       "Bash(DATABASE_URL=\"postgresql://localhost:5432/simulator_test\" NODE_ENV=\"development\" npx ts-node:*)",
       "Bash(npm install:*)",
-      "Bash(npm test:*)"
+      "Bash(npm test:*)",
+      "Bash(npm uninstall:*)"
     ]
   }
 }

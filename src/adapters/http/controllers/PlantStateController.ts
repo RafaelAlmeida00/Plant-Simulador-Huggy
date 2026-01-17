@@ -53,7 +53,7 @@ export class PlantStateController {
     public async getById(req: Request, res: Response): Promise<void> {
         try {
             const { id } = req.params;
-            const snapshot = await this.repository.findById(parseInt(id, 10));
+            const snapshot = await this.repository.findById(parseInt(String(id), 10));
             
             if (!snapshot) {
                 res.status(404).json({ success: false, error: 'Plant snapshot not found' });
@@ -99,7 +99,7 @@ export class PlantStateController {
             const { id } = req.params;
             const snapshotData: Partial<IPlantSnapshotRecord> = req.body;
             
-            const snapshot = await this.repository.update(parseInt(id, 10), snapshotData);
+            const snapshot = await this.repository.update(parseInt(String(id), 10), snapshotData);
             
             if (!snapshot) {
                 res.status(404).json({ success: false, error: 'Plant snapshot not found' });
@@ -116,7 +116,7 @@ export class PlantStateController {
     public async delete(req: Request, res: Response): Promise<void> {
         try {
             const { id } = req.params;
-            const deleted = await this.repository.delete(parseInt(id, 10));
+            const deleted = await this.repository.delete(parseInt(String(id), 10));
             
             if (!deleted) {
                 res.status(404).json({ success: false, error: 'Plant snapshot not found' });

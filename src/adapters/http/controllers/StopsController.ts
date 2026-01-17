@@ -75,7 +75,7 @@ export class StopsController {
     public async getById(req: Request, res: Response): Promise<void> {
         try {
             const { id } = req.params;
-            const stop = await this.repository.findById(parseInt(id, 10));
+            const stop = await this.repository.findById(parseInt(String(id), 10));
             
             if (!stop) {
                 res.status(404).json({ success: false, error: 'Stop not found' });
@@ -115,7 +115,7 @@ export class StopsController {
             const { id } = req.params;
             const stopData: Partial<IStopEvent> = req.body;
             
-            const stop = await this.repository.update(parseInt(id, 10), stopData);
+            const stop = await this.repository.update(parseInt(String(id), 10), stopData);
             
             if (!stop) {
                 res.status(404).json({ success: false, error: 'Stop not found' });
@@ -132,7 +132,7 @@ export class StopsController {
     public async delete(req: Request, res: Response): Promise<void> {
         try {
             const { id } = req.params;
-            const deleted = await this.repository.delete(parseInt(id, 10));
+            const deleted = await this.repository.delete(parseInt(String(id), 10));
             
             if (!deleted) {
                 res.status(404).json({ success: false, error: 'Stop not found' });

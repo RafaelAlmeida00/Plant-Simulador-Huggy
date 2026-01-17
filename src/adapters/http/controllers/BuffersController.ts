@@ -93,7 +93,7 @@ export class BuffersController {
     public async getById(req: Request, res: Response): Promise<void> {
         try {
             const { id } = req.params;
-            const buffer = await this.repository.findById(parseInt(id, 10));
+            const buffer = await this.repository.findById(parseInt(String(id), 10));
             
             if (!buffer) {
                 res.status(404).json({ success: false, error: 'Buffer state not found' });
@@ -134,7 +134,7 @@ export class BuffersController {
             const { id } = req.params;
             const bufferData: Partial<IBufferState> = req.body;
             
-            const buffer = await this.repository.update(parseInt(id, 10), bufferData);
+            const buffer = await this.repository.update(parseInt(String(id), 10), bufferData);
             
             if (!buffer) {
                 res.status(404).json({ success: false, error: 'Buffer state not found' });
@@ -151,7 +151,7 @@ export class BuffersController {
     public async delete(req: Request, res: Response): Promise<void> {
         try {
             const { id } = req.params;
-            const deleted = await this.repository.delete(parseInt(id, 10));
+            const deleted = await this.repository.delete(parseInt(String(id), 10));
             
             if (!deleted) {
                 res.status(404).json({ success: false, error: 'Buffer state not found' });

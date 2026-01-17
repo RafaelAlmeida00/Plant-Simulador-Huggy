@@ -41,7 +41,7 @@ export class ConfigController {
     public async getById(req: Request, res: Response): Promise<void> {
         try {
             const { id } = req.params;
-            const record = await this.repository.findById(id);
+            const record = await this.repository.findById(String(id));
             
             if (!record) {
                 res.status(404).json({ success: false, error: 'Configuration not found' });
@@ -58,7 +58,7 @@ export class ConfigController {
     public async getByName(req: Request, res: Response): Promise<void> {
         try {
             const { name } = req.params;
-            const record = await this.repository.findByName(name);
+            const record = await this.repository.findByName(String(name));
             
             if (!record) {
                 res.status(404).json({ success: false, error: 'Configuration not found' });
@@ -130,7 +130,7 @@ export class ConfigController {
             const { id } = req.params;
             const data = req.body;
 
-            const existing = await this.repository.findById(id);
+            const existing = await this.repository.findById(String(id));
             if (!existing) {
                 res.status(404).json({ success: false, error: 'Configuration not found' });
                 return;
@@ -175,7 +175,7 @@ export class ConfigController {
                 updateData.isDefault = data.isDefault === true || data.isDefault === 'true';
             }
 
-            const updated = await this.repository.update(id, updateData);
+            const updated = await this.repository.update(String(id), updateData);
             res.json({ success: true, data: updated });
         } catch (error: any) {
             res.status(500).json({ success: false, error: error.message });
@@ -187,13 +187,13 @@ export class ConfigController {
         try {
             const { id } = req.params;
 
-            const existing = await this.repository.findById(id);
+            const existing = await this.repository.findById(String(id));
             if (!existing) {
                 res.status(404).json({ success: false, error: 'Configuration not found' });
                 return;
             }
 
-            const deleted = await this.repository.delete(id);
+            const deleted = await this.repository.delete(String(id));
             
             if (deleted) {
                 res.json({ success: true, message: 'Configuration deleted successfully' });
@@ -210,7 +210,7 @@ export class ConfigController {
         try {
             const { id } = req.params;
 
-            const updated = await this.repository.setAsDefault(id);
+            const updated = await this.repository.setAsDefault(String(id));
             
             if (!updated) {
                 res.status(404).json({ success: false, error: 'Configuration not found' });
