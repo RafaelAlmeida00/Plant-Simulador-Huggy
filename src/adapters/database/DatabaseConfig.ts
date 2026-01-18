@@ -1,6 +1,6 @@
 // src/adapters/database/DatabaseConfig.ts
 
-export type DatabaseType = 'sqlite' | 'postgres' | 'aws' | 'gcp' | 'local';
+export type DatabaseType = 'sqlite' | 'postgres' | 'aws' | 'gcp' | 'local' | 'turso';
 
 export interface IDatabaseConfig {
     type: DatabaseType;
@@ -11,6 +11,7 @@ export interface IDatabaseConfig {
     user?: string;
     password?: string;
     ssl?: boolean;
+    authToken?: string;
 }
 
 export class DatabaseConfigFactory {
@@ -76,6 +77,12 @@ export class DatabaseConfigFactory {
                 return {
                     type: 'postgres',
                     connectionString: process.env.DATABASE_URL
+                };
+            case 'turso':
+                return {
+                    type: 'turso',
+                    connectionString: process.env.TURSO_DATABASE_URL,
+                    authToken: process.env.TURSO_AUTH_TOKEN
                 };
             default:
                 throw new Error(`Unsupported production database type: ${dbType}`);

@@ -4,6 +4,7 @@ import { IDatabase } from './IDatabase';
 import { DatabaseConfigFactory, IDatabaseConfig } from './DatabaseConfig';
 import { SQLiteDatabase } from './SQLiteDatabase';
 import { PostgresDatabase } from './PostgresDatabase';
+import { TursoDatabase } from './TursoDatabase';
 import { resetTestDatabase } from '../../utils/restartDB';
 
 export class DatabaseFactory {
@@ -41,8 +42,11 @@ export class DatabaseFactory {
             case 'postgres':
             case 'aws':
             case 'gcp':
-            case 'postgres':
+            case 'local':
                 return new PostgresDatabase(config);
+
+            case 'turso':
+                return new TursoDatabase(config);
 
             default:
                 throw new Error(`Unsupported database type: ${config.type}`);

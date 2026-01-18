@@ -12,7 +12,10 @@ interface EnvCheck {
 const REQUIRED_VARS: EnvCheck[] = [
     { name: 'NEXTAUTH_CSRF_URL', required: false, pattern: /^https?:\/\// },
     { name: 'NEXTAUTH_SECRET', required: false, minLength: 16 },
-    { name: 'DATABASE_URL', required: true, pattern: /^postgres(ql)?:\/\// },
+    { name: 'TURSO_DATABASE_URL', required: false, pattern: /^libsql:\/\// },
+    { name: 'TURSO_AUTH_TOKEN', required: false, minLength: 10 },
+    { name: 'DATABASE_URL', required: false, pattern: /^postgres(ql)?:\/\// },
+    { name: 'DATABASE_TYPE', required: false, pattern: /^(sqlite|postgres|turso|aws|gcp|local)$/ },
     { name: 'NODE_ENV', required: false, pattern: /^(development|staging|production)$/ },
 ];
 

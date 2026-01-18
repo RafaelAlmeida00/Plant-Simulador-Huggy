@@ -7,7 +7,9 @@
       "Bash(DATABASE_URL=\"postgresql://localhost:5432/simulator_test\" NODE_ENV=\"development\" npx ts-node:*)",
       "Bash(npm install:*)",
       "Bash(npm test:*)",
-      "Bash(npm uninstall:*)"
+      "Bash(npm uninstall:*)",
+      "Skill(code-review:code-review)",
+      "Skill(code-review:code-review:*)"
     ]
   }
 }

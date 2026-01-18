@@ -4,6 +4,7 @@
   "description": "---\r license: mit\r title: Simulator Plant\r sdk: docker\r emoji: 🚀\r colorFrom: blue\r colorTo: green\r short_description: Simulator Plant\r ---",
   "main": "index.js",
   "dependencies": {
+    "@libsql/client": "^0.17.0",
     "@msgpack/msgpack": "^3.1.3",
     "accepts": "^2.0.0",
     "acorn": "^8.15.0",

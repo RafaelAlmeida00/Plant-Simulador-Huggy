@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends tzdata && rm -r
 ENV PORT=7860
 
 ENV NODE_ENV=production
-ENV DATABASE_TYPE=sql
+ENV DATABASE_TYPE=turso
 ENV NODE_OPTIONS=--max-old-space-size=8192
 
 # Copia arquivos do builder
