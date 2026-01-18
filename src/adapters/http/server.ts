@@ -8,7 +8,6 @@ import rateLimit from 'express-rate-limit';
 import AppRouter from './router/router';
 import { socketServer } from './websocket/SocketServer';
 import { DatabaseFactory } from '../database/DatabaseFactory';
-import HealthController from './controllers/HealthController';
 
 // Swagger imports
 import swaggerUi from 'swagger-ui-express';
@@ -18,7 +17,6 @@ export class Server {
     private app: express.Application;
     private httpServer: HttpServer;
     private port: number | string;
-    private simulatorClock: any = null;
 
     constructor() {
         this.app = express();
@@ -117,11 +115,6 @@ export class Server {
     private initializeWebSocket() {
         socketServer.initialize(this.httpServer);
         console.log('[SERVER] WebSocket initialized');
-    }
-
-    public setSimulatorClock(clock: any): void {
-        this.simulatorClock = clock;
-        HealthController.setSimulatorClock(clock);
     }
 
     public getSocketServer() {

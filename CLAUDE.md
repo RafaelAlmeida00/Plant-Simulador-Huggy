@@ -52,8 +52,8 @@ The project follows **Clean Architecture** principles with clear layer separatio
 ┌─────────────────────────────────────────────────────────────────┐
 │                      APPLICATION LAYER                          │
 │  ┌─────────────────┐  ┌─────────────┐  ┌────────────────────┐   │
-│  │ SimulationClock │  │ Simulation  │  │    Simulation      │   │
-│  │   (Orchestrator)│  │    Flow     │  │   EventEmitter     │   │
+│  │ SimulationClock │  │ Simulation  │  │   SessionManager   │   │
+│  │   (Orchestrator)│  │    Flow     │  │  (Worker Threads)  │   │
 │  └─────────────────┘  └─────────────┘  └────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
                               ▲
@@ -125,26 +125,27 @@ interface BaseRepository<T> {
 Single instances for shared resources:
 
 - `DatabaseFactory` - One database connection per app
-- `SimulationEventEmitter` - Central event hub
 - `SocketServer` - Single WebSocket server
+- `SessionManager` - Manages all simulation sessions
 
 ### 4. Observer/Event Emitter Pattern
 
-Decoupled communication via events:
+Decoupled communication via Worker Thread message passing:
 
 ```
-SimulationClock (EventEmitter)
-       │
-       │ emits "tick"
-       ▼
-SimulationFlow.execute()
-       │
-       │ triggers callbacks
-       ▼
-SimulationEventEmitter
-       │
-       ├──► socketServer.emit() (real-time)
-       └──► repository.create() (persistence)
+WORKER THREAD                          MAIN THREAD
+┌──────────────────┐                   ┌─────────────────────┐
+│ SimulationClock  │                   │ SessionManager      │
+│       │          │                   │       │             │
+│ emits "tick"     │                   │ onWorkerEvent()     │
+│       ▼          │                   │       │             │
+│ SimulationFlow   │ ──postMessage()──►│       ▼             │
+│       │          │                   │ SocketServer        │
+│ triggers events  │                   │       │             │
+│       ▼          │                   │ broadcastToSession()│
+│ Repository       │                   └─────────────────────┘
+│ (persistence)    │
+└──────────────────┘
 ```
 
 ### 5. Strategy Pattern
@@ -431,16 +432,19 @@ Start Station ──► Station N ──► ... ──► Last Station ──►
 ### Event Flow Rules
 
 ```
-SimulationFlow.execute()
-       │
-       ├──► onCarCreated()    ──► emitCarCreated()    ──► DB + WebSocket
-       ├──► onCarMoved()      ──► emitCarMoved()      ──► DB + WebSocket
-       ├──► onCarCompleted()  ──► emitCarCompleted()  ──► DB + WebSocket
-       ├──► onBufferIn()      ──► emitBufferIn()      ──► DB + WebSocket
-       ├──► onBufferOut()     ──► emitBufferOut()     ──► DB + WebSocket
-       ├──► onStopStarted()   ──► emitStopStarted()   ──► DB + WebSocket
-       ├──► onStopEnded()     ──► emitStopEnded()     ──► DB + WebSocket
-       └──► onOEECalculated() ──► emitOEE()           ──► WebSocket (throttled)
+WORKER THREAD (per session)                    MAIN THREAD
+SimulationFlow.execute()                       SessionManager.onWorkerEvent()
+       │                                              │
+       ├──► onCarCreated()    ──► postMessage() ────► socketServer.emitSessionEvent()
+       ├──► onCarMoved()      ──► postMessage() ────► socketServer.emitSessionEvent()
+       ├──► onCarCompleted()  ──► postMessage() ────► socketServer.emitSessionEvent()
+       ├──► onBufferIn()      ──► postMessage() ────► socketServer.emitSessionEvent()
+       ├──► onBufferOut()     ──► postMessage() ────► socketServer.emitSessionEvent()
+       ├──► onStopStarted()   ──► postMessage() ────► socketServer.broadcastToSession()
+       ├──► onStopEnded()     ──► postMessage() ────► socketServer.broadcastToSession()
+       └──► onOEECalculated() ──► postMessage() ────► socketServer.broadcastToSession()
+
+       Repository.create() (persistence happens in worker thread)
 ```
 
 ---
@@ -483,8 +487,13 @@ src/
 │           └── index.ts
 ├── app/                               # Application layer
 │   ├── SimulationClock.ts             # Time control (pause/resume/restart)
-│   ├── SimulationEventEmitter.ts      # Event hub
 │   └── SimulationFlow.ts              # Core simulation logic
+├── sessions/                          # Multi-session management
+│   ├── SessionManager.ts              # Session lifecycle management
+│   ├── WorkerPoolManager.ts           # Worker Thread management
+│   └── RecoveryService.ts             # Session recovery after restart
+├── workers/                           # Worker Thread entry points
+│   └── SimulationWorker.ts            # Worker entry point
 ├── domain/                            # Domain layer
 │   ├── config/
 │   │   └── flowPlant.ts               # Plant configuration
@@ -520,10 +529,13 @@ src/
 | `src/app/SimulationFlow.ts` | ~1037 | Core business logic - car movement, stops, buffers, OEE/MTTR/MTBF calculation |
 | `src/domain/config/flowPlant.ts` | ~778 | Complete plant configuration (shops, lines, buffers) |
 | `src/app/SimulationClock.ts` | ~393 | Simulation orchestration + tick loop |
+| `src/sessions/SessionManager.ts` | ~400+ | Session lifecycle, worker coordination, event routing |
+| `src/sessions/WorkerPoolManager.ts` | ~300+ | Worker Thread pool management |
+| `src/sessions/RecoveryService.ts` | ~340+ | Recovery data collection and restoration |
+| `src/workers/SimulationWorker.ts` | ~200+ | Worker entry point with message handling |
 | `src/domain/services/PlantService.ts` | ~488 | Plant structure initialization and management |
 | `src/domain/services/ServiceLocator.ts` | ~97 | Centralized dependency injection and service management |
 | `src/utils/shared.ts` | ~350+ | All TypeScript interfaces & types |
-| `src/app/SimulationEventEmitter.ts` | ~500+ | Event hub (WebSocket + persistence) |
 | `src/adapters/database/repositories/BaseRepository.ts` | ~94 | Abstract repository pattern |
 
 ---
@@ -802,12 +814,12 @@ DB_TYPE=sqlite npm run dev
 ## Important Notes for Claude
 
 1. **Always read existing code** before making modifications
-2. **Follow the established patterns** - Factory, Repository, Event-driven
+2. **Follow the established patterns** - Factory, Repository, Worker Thread messaging
 3. **Update interfaces first** when adding new features
 4. **Test with both databases** - PostgreSQL and SQLite
 5. **Maintain layer separation** - Don't mix concerns across layers
 6. **Use existing utilities** from `shared.ts`, `logger.ts`, `clock.ts`
-7. **Emit events** through `SimulationEventEmitter` for cross-cutting concerns
+7. **Use Worker Threads** - Each session runs in its own Worker Thread for isolation
 8. **Throttle appropriately** - Don't flood WebSocket or database
 
 ## Session Management System
@@ -899,6 +911,33 @@ When the server restarts, all Worker Threads are destroyed. The Recovery System:
 
 ## Recent Changes (2026-01-18)
 
+### Legacy Simulation System Removed
+
+**Removed Files:**
+- `src/app/SimulationEventEmitter.ts` - No longer needed (workers use `parentPort.postMessage()`)
+- `src/domain/factories/SimulationFactory.ts` - Workers instantiate `SimulationClock` directly
+
+**Modified Files:**
+- `src/index.ts` - Removed `StartSimulation()`, `setSimulatorClock()`, `setSimulator()`, legacy callbacks
+- `src/adapters/http/server.ts` - Removed `simulatorClock` property and `setSimulatorClock()` method
+- `src/adapters/http/websocket/SocketServer.ts` - Removed `simulator` property, `setSimulator()`, and `controlSimulator` handler
+- `src/adapters/http/controllers/HealthController.ts` - Refactored to use `SessionManager` for session stats
+
+**Breaking Changes:**
+- WebSocket `controlSimulator` event removed - use HTTP endpoints (`POST /api/sessions/:id/pause`, etc.)
+- `/api/health` no longer includes `simulatorStatus` - use `/api/sessions/:id` for session status
+- No automatic simulation on server start - create sessions via `POST /api/sessions`
+
+**New Server Boot Behavior:**
+1. Database initialization
+2. SessionManager initialization + recovery handling
+3. Session route registration
+4. Worker event forwarding setup
+5. HTTP server start
+6. Ready for session creation via API
+
+---
+
 ### Session Recovery System Implementation
 
 **New Files:**
@@ -923,8 +962,6 @@ When the server restarts, all Worker Threads are destroyed. The Recovery System:
 - `POST /api/sessions/:id/discard` - Discard interrupted session
 
 ---
-
-## Recent Changes (2026-01-17)
 
 ### OEE Calculation Fixes
 
@@ -962,6 +999,6 @@ oee = ((taktTime * carsProduction) / effectiveProductionTime) * 100
 
 * If you are a IA or is a IA Claude Model by Anthropic, update this file always that you make a edit and get new informations about the project, change the architeture, logic and rules of the simulator. Read and do the command on file TIMELINE.md. Also, update the data change below:
 
-*Last updated: 2026-01-18 12:00:00*
+*Last updated: 2026-01-18 15:30:00*
 
 ---

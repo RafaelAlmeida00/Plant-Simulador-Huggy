@@ -1,29 +1,31 @@
 // src/adapters/http/controllers/HealthController.ts
 
 import { Request, Response } from 'express';
+import { SessionManager } from '../../../sessions/SessionManager';
 
 export interface HealthStatus {
     status: 'healthy' | 'unhealthy';
     serverTimestamp: number;
     serverTimeString: string;
-    simulatorStatus: 'running' | 'stopped' | 'paused' | 'unknown';
-    simulatorTimestamp: number | null;
-    simulatorTimeString: string | null;
     uptime: number;
     database: 'connected' | 'disconnected' | 'unknown';
     version: string;
+    sessions: {
+        active: number;
+        limit: number;
+    };
 }
 
 export class HealthController {
     private startTime: number;
-    private simulatorClock: any = null;
+    private sessionManager: SessionManager | null = null;
 
     constructor() {
         this.startTime = Date.now();
     }
 
-    public setSimulatorClock(clock: any): void {
-        this.simulatorClock = clock;
+    public setSessionManager(manager: SessionManager): void {
+        this.sessionManager = manager;
     }
 
     // GET /api/health
@@ -31,22 +33,6 @@ export class HealthController {
         try {
             const now = Date.now();
             const uptime = now - this.startTime;
-
-            let simulatorStatus: 'running' | 'stopped' | 'paused' | 'unknown' = 'unknown';
-            let simulatorTimestamp: number | null = null;
-            let simulatorTimeString: string | null = null;
-
-            if (this.simulatorClock) {
-                try {
-                    const state = this.simulatorClock.state;
-                    simulatorStatus = state === 'running' ? 'running' : 
-                                     state === 'paused' ? 'paused' : 'stopped';
-                    simulatorTimestamp = this.simulatorClock.simulatedTimestamp;
-                    simulatorTimeString = this.simulatorClock.getSimulatedTimeString();
-                } catch {
-                    simulatorStatus = 'unknown';
-                }
-            }
 
             // Verificar conexão do banco
             let databaseStatus: 'connected' | 'disconnected' | 'unknown' = 'unknown';
@@ -58,22 +44,34 @@ export class HealthController {
                 databaseStatus = 'disconnected';
             }
 
+            // Session stats
+            let sessions = { active: 0, limit: 20 };
+            if (this.sessionManager) {
+                try {
+                    const stats = await this.sessionManager.getSessionStats('global');
+                    sessions = {
+                        active: stats.globalActive,
+                        limit: stats.limits.maxGlobalSessions
+                    };
+                } catch {
+                    // Keep default values
+                }
+            }
+
             const health: HealthStatus = {
                 status: databaseStatus === 'connected' ? 'healthy' : 'unhealthy',
                 serverTimestamp: now,
                 serverTimeString: new Date(now).toISOString(),
-                simulatorStatus,
-                simulatorTimestamp,
-                simulatorTimeString,
                 uptime,
                 database: databaseStatus,
-                version: '1.0.0'
+                version: '2.0.0',
+                sessions
             };
 
             res.json({ success: true, data: health });
         } catch (error: any) {
-            res.status(500).json({ 
-                success: false, 
+            res.status(500).json({
+                success: false,
                 error: error.message,
                 data: {
                     status: 'unhealthy',
@@ -93,26 +91,18 @@ export class HealthController {
             const memoryUsage = process.memoryUsage();
             const cpuUsage = process.cpuUsage();
 
-            // Coleta informações do simulador
-            let simulatorStatus: 'running' | 'stopped' | 'paused' | 'unknown' = 'unknown';
-            let simulatorTimestamp: number | null = null;
-            let simulatorTimeString: string | null = null;
-            let simulatorDateString: string | null = null;
-            let currentTick: number | null = null;
-            let speedFactor: number | null = null;
-
-            if (this.simulatorClock) {
+            // Session stats
+            let sessions = { active: 0, limit: 20, perUser: 2 };
+            if (this.sessionManager) {
                 try {
-                    const state = this.simulatorClock.state;
-                    simulatorStatus = state === 'running' ? 'running' : 
-                                     state === 'paused' ? 'paused' : 'stopped';
-                    simulatorTimestamp = this.simulatorClock.simulatedTimestamp;
-                    simulatorTimeString = this.simulatorClock.getSimulatedTimeString();
-                    simulatorDateString = this.simulatorClock.getSimulatedDateString();
-                    currentTick = this.simulatorClock.currentTick;
-                    speedFactor = this.simulatorClock.speedFactor;
+                    const stats = await this.sessionManager.getSessionStats('global');
+                    sessions = {
+                        active: stats.globalActive,
+                        limit: stats.limits.maxGlobalSessions,
+                        perUser: stats.limits.maxSessionsPerUser
+                    };
                 } catch {
-                    simulatorStatus = 'unknown';
+                    // Keep default values
                 }
             }
 
@@ -120,14 +110,7 @@ export class HealthController {
                 status: 'healthy',
                 timestamp: now,
                 uptime,
-                simulator: {
-                    status: simulatorStatus,
-                    timestamp: simulatorTimestamp,
-                    timeString: simulatorTimeString,
-                    dateString: simulatorDateString,
-                    currentTick,
-                    speedFactor
-                },
+                sessions,
                 memory: {
                     heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024) + ' MB',
                     heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024) + ' MB',

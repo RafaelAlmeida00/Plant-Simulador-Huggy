@@ -2,7 +2,6 @@ import { ILine, IShop, IStation, IStopLine, StopCategory, StopSeverity, StopType
 import { StopLine } from "../models/StopLine";
 import { getActiveFlowPlant, PlantFactory } from "./plantFactory";
 import { logger } from "../../utils/logger";
-import { SimulationEventEmitter } from "../../app/SimulationEventEmitter";
 
 export class StopLineFactory {
     public stopsMap: Map<string, IStopLine> = new Map();

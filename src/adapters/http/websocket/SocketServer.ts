@@ -4,18 +4,10 @@ import { Server as HttpServer } from 'http';
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import msgpackParser from 'socket.io-msgpack-parser';
 import { ICar, IStopLine, IBuffer, IShop, ILine, IStation, PlantSnapshot } from '../../../utils/shared';
-import { SimulationClock } from '../../../app/SimulationClock';
-import { DatabaseFactory } from '../../database/DatabaseFactory';
 import { DeltaService, DeltaResult } from './DeltaService';
 import { BackpressureManager, AckPayload } from './BackpressureManager';
 import { ChunkingService } from './ChunkingService';
 import { setupOptionalSocketAuth } from '../middleware/socketAuth';
-
-export type SimulatorAction = 'pause' | 'restart' | 'stop' | 'start';
-
-export interface ControlSimulatorMessage {
-    action: SimulatorAction;
-}
 
 export interface SocketEventData {
     type: string;
@@ -26,13 +18,10 @@ export interface SocketEventData {
 export class SocketServer {
     private io: SocketIOServer | null = null;
     private static instance: SocketServer | null = null;
-    private readonly allowedChannels = new Set(['events', 'stops', 'buffers', 'plantstate', 'health', 'cars', 'oee', 'controlSimulator']);
+    private readonly allowedChannels = new Set(['events', 'stops', 'buffers', 'plantstate', 'health', 'cars', 'oee']);
 
     // Cache do último estado de cada room para emissão imediata ao inscrever
     private lastState: Map<string, SocketEventData> = new Map();
-
-    // Referência ao simulador para controle via WebSocket
-    private simulator: SimulationClock | null = null;
 
     // Performance: Track socket subscriptions for cleanup
     private socketSubscriptions: Map<string, Set<string>> = new Map();
@@ -59,11 +48,6 @@ export class SocketServer {
             SocketServer.instance = new SocketServer();
         }
         return SocketServer.instance;
-    }
-
-    // Define a referência do simulador para controle
-    public setSimulator(simulator: SimulationClock): void {
-        this.simulator = simulator;
     }
 
     public initialize(httpServer: HttpServer): SocketIOServer {
@@ -243,11 +227,6 @@ export class SocketServer {
                 this.backpressureManager.handleAck(socket.id, ack);
             });
 
-            // Handler para controle da simulação via WebSocket
-            socket.on('controlSimulator', (message: ControlSimulatorMessage) => {
-                void this.handleSimulatorControl(socket, message);
-            });
-
             // Error handler for debugging connection issues
             socket.on('error', (error: Error) => {
                 console.error(`[SOCKET] Error for ${socket.id}:`, error.message);
@@ -274,99 +253,6 @@ export class SocketServer {
 
                 socket.removeAllListeners();
             });
-        });
-    }
-
-    // Processa comandos de controle da simulação
-    private async handleSimulatorControl(socket: Socket, message: ControlSimulatorMessage): Promise<void> {
-        if (!this.simulator) {
-            socket.emit('controlSimulator', {
-                success: false,
-                error: 'Simulator not connected',
-                action: message?.action,
-                status: 'unknown'
-            });
-            return;
-        }
-
-        const action = message?.action;
-        const validActions: SimulatorAction[] = ['pause', 'restart', 'stop', 'start'];
-
-        if (!action || !validActions.includes(action)) {
-            socket.emit('controlSimulator', {
-                success: false,
-                error: `Invalid action. Valid actions are: ${validActions.join(', ')}`,
-                action,
-                status: this.simulator.state
-            });
-            return;
-        }
-
-        try {
-            switch (action) {
-                case 'pause':
-                    this.simulator.pause();
-                    console.log(`[SOCKET] Simulator paused by client ${socket.id}`);
-                    break;
-                case 'restart':
-                    // Garante que o banco (e tabelas) esteja pronto antes do restart.
-                    await DatabaseFactory.getDatabase();
-                    this.simulator.restart();
-                    console.log(`[SOCKET] Simulator restarted by client ${socket.id}`);
-                    break;
-                case 'stop':
-                    this.simulator.stop();
-                    console.log(`[SOCKET] Simulator stopped by client ${socket.id}`);
-                    break;
-                case 'start':
-                    // Se estiver pausado, resume. Se estiver parado, inicia do zero.
-                    if (this.simulator.state === 'paused') {
-                        this.simulator.resume();
-                        console.log(`[SOCKET] Simulator resumed by client ${socket.id}`);
-                    } else if (this.simulator.state === 'stopped') {
-                        // Garante que o banco (e tabelas) esteja pronto antes do start.
-                        await DatabaseFactory.getDatabase();
-                        this.simulator.start();
-                        console.log(`[SOCKET] Simulator started by client ${socket.id}`);
-                    } else {
-                        // Já está rodando, não faz nada
-                        console.log(`[SOCKET] Simulator already running, ignoring start from ${socket.id}`);
-                    }
-                    break;
-            }
-
-            socket.emit('controlSimulator', {
-                success: true,
-                action,
-                status: this.simulator.state
-            });
-
-            // Emite health para todos os clientes inscritos na room health
-            this.emitHealthAfterControl();
-        } catch (error: any) {
-            socket.emit('controlSimulator', {
-                success: false,
-                error: error.message,
-                action,
-                status: this.simulator.state
-            });
-
-            // Emite health mesmo em caso de erro
-            this.emitHealthAfterControl();
-        }
-    }
-
-    // Emite health após uma ação de controle do simulador
-    private emitHealthAfterControl(): void {
-        if (!this.simulator) return;
-
-        this.emitHealth({
-            serverStatus: 'healthy',
-            simulatorStatus: this.simulator.state as 'running' | 'stopped' | 'paused',
-            timestamp: Date.now(),
-            simulatorTimestamp: this.simulator.simulatedTimestamp,
-            simulatorTimeString: this.simulator.getSimulatedTimeString(),
-            uptime: 0 // Será atualizado pelo próximo tick se necessário
         });
     }
 
