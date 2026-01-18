@@ -344,4 +344,13 @@ export class CarService {
         this.carFactory.cleanCarsCompleted();
     }
 
+    /**
+     * Restore completed car IDs for recovery
+     * This marks car IDs as already completed so they won't be double-counted
+     */
+    public restoreCompletedCars(completedIds: Set<string>): void {
+        this.carFactory.restoreCompletedCarIds(completedIds);
+        logger().info(`[CarService] Restored ${completedIds.size} completed car IDs for recovery`);
+    }
+
 }

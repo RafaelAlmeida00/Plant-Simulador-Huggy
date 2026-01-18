@@ -67,6 +67,12 @@ channels:
       publish.message:
         $ref: '#/components/messages/Command'
     description: Canal para envio de comandos do front end para o simulador
+  sessionEvent:
+    address: session:{sessionId}
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/SessionEvent'
+    description: Eventos de sessão específica (state changes, recovery, errors)
 operations:
   plantUpdate.subscribe:
     action: send
@@ -314,3 +320,39 @@ components:
           payload:
             type: object
             description: Parâmetros do comando
+    SessionEvent:
+      name: SessionEvent
+      title: Evento de Sessão
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            enum:
+              - STATE_CHANGE
+              - INIT_COMPLETE
+              - ERROR
+              - HEARTBEAT
+              - EVENT
+            description: Tipo do evento de sessão
+          sessionId:
+            type: string
+            description: ID da sessão
+          data:
+            type: object
+            description: Dados específicos do evento
+            properties:
+              status:
+                type: string
+                enum: [idle, running, paused, stopped, expired, interrupted]
+                description: Novo status (para STATE_CHANGE)
+              eventType:
+                type: string
+                enum: [tick, carCreated, carMoved, carCompleted, bufferIn, bufferOut, stopStarted, stopEnded, oeeCalculated, recoveryComplete]
+                description: Tipo de evento de simulação (para EVENT)
+              message:
+                type: string
+                description: Mensagem de erro (para ERROR)
+          timestamp:
+            type: integer
+            description: Timestamp do evento

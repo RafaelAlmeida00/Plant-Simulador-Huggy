@@ -12,6 +12,8 @@ import { MTTRMTBFData } from "./utils/shared";
 import { IStopLine } from "./utils/shared";
 import { logger } from "./utils/logger";
 import { validateSecurityEnvironment } from "./config/security-config";
+import { SessionManager } from "./sessions/SessionManager";
+import { registerSessionRoutes } from "./adapters/http/router/router";
 
 const serverStartTime = Date.now();
 
@@ -156,7 +158,95 @@ async function main(): Promise<void> {
     // Primeiro processo do boot: banco (inclui criação de tabelas via connect()).
     await DatabaseFactory.getDatabase();
 
-    logger().info('[BOOT] Database connected. Starting simulation...');
+    logger().info('[BOOT] Database connected. Initializing session manager...');
+
+    // Initialize SessionManager for multi-session support
+    const sessionManager = new SessionManager();
+    await sessionManager.initialize();
+    logger().info('[BOOT] Session manager initialized.');
+
+    // Register session routes
+    registerSessionRoutes(sessionManager);
+    logger().info('[BOOT] Session routes registered.');
+
+    // Forward worker events to WebSocket for session-specific broadcasting
+    sessionManager.onWorkerEvent((event) => {
+        // Route session events to subscribed clients
+        switch (event.type) {
+            case 'EVENT':
+                // Handle simulation events (sent with eventType in data)
+                const eventType = event.data?.eventType;
+                switch (eventType) {
+                    case 'carCreated':
+                    case 'carMoved':
+                    case 'carCompleted':
+                    case 'bufferIn':
+                    case 'bufferOut':
+                    case 'reworkIn':
+                    case 'reworkOut':
+                        socketServer.emitSessionEvent(event.sessionId, eventType, event.data);
+                        break;
+
+                    case 'stopStarted':
+                        socketServer.broadcastToSession(event.sessionId, 'stops', {
+                            action: 'STARTED',
+                            stop: event.data.stop
+                        });
+                        break;
+
+                    case 'stopEnded':
+                        socketServer.broadcastToSession(event.sessionId, 'stops', {
+                            action: 'ENDED',
+                            stop: event.data.stop
+                        });
+                        break;
+
+                    case 'oeeCalculated':
+                        socketServer.broadcastToSession(event.sessionId, 'oee', event.data.oee);
+                        break;
+
+                    case 'tick':
+                        // Emit health status for session
+                        socketServer.broadcastToSession(event.sessionId, 'health', {
+                            serverStatus: 'healthy',
+                            simulatorStatus: event.data.state?.status || 'running',
+                            timestamp: Date.now(),
+                            simulatorTimestamp: event.data.tick?.simulatedTimestamp,
+                            simulatorTimeString: event.data.tick?.simulatedTimeString
+                        });
+                        break;
+                }
+                break;
+
+            case 'STATE_CHANGE':
+                // Session state changed (running, paused, stopped)
+                socketServer.broadcastToSession(event.sessionId, 'health', {
+                    serverStatus: 'healthy',
+                    simulatorStatus: event.data?.status || 'unknown',
+                    timestamp: Date.now()
+                });
+                break;
+
+            case 'ERROR':
+                socketServer.broadcastToSession(event.sessionId, 'events', {
+                    type: 'SESSION_ERROR',
+                    error: event.data
+                });
+                break;
+
+            case 'WORKER_CRASHED':
+                socketServer.broadcastToSession(event.sessionId, 'events', {
+                    type: 'SESSION_CRASHED',
+                    message: 'Worker thread crashed unexpectedly'
+                });
+                break;
+
+            // INIT_COMPLETE and HEARTBEAT are handled internally by SessionManager
+        }
+    });
+    logger().info('[BOOT] Worker event forwarding configured.');
+
+    logger().info('[BOOT] Starting default simulation...');
     const server = new Server();
     logger().info('[BOOT] HTTP Server created. Starting simulation instance...');
     const simulation = await StartSimulation();

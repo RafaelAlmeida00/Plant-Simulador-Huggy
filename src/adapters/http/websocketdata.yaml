@@ -575,6 +575,75 @@ x-socketio:
             type: number
         required: ["type", "data", "timestamp"]
 
+    session:
+      emits: ["session_event", "session_state"]
+      hasLegacyAliases: false
+      legacyEmits: []
+      description: "Eventos de sessão específica (state changes, recovery, errors). Cliente deve se inscrever com session:{sessionId}"
+      variants:
+        session_event:
+          payload:
+            type: object
+            properties:
+              type:
+                type: string
+                enum: ["STATE_CHANGE", "INIT_COMPLETE", "ERROR", "HEARTBEAT", "EVENT"]
+                description: Tipo do evento de sessão
+              sessionId:
+                type: string
+                description: ID da sessão
+              data:
+                type: object
+                description: Dados específicos do evento
+                properties:
+                  status:
+                    type: string
+                    enum: ["idle", "running", "paused", "stopped", "expired", "interrupted"]
+                    description: Novo status da sessão (para STATE_CHANGE)
+                  eventType:
+                    type: string
+                    enum: ["tick", "carCreated", "carMoved", "carCompleted", "bufferIn", "bufferOut", "stopStarted", "stopEnded", "oeeCalculated", "mttrMtbfCalculated", "recoveryComplete", "reworkIn", "reworkOut"]
+                    description: Tipo de evento de simulação (para EVENT)
+                  message:
+                    type: string
+                    description: Mensagem de erro (para ERROR)
+                  memoryUsage:
+                    type: object
+                    description: Uso de memória do worker (para HEARTBEAT)
+                  uptime:
+                    type: number
+                    description: Uptime do worker em segundos (para HEARTBEAT)
+              timestamp:
+                type: number
+            required: ["type", "sessionId", "timestamp"]
+
+        recovery_complete:
+          payload:
+            type: object
+            properties:
+              type:
+                type: string
+                example: "EVENT"
+              sessionId:
+                type: string
+              data:
+                type: object
+                properties:
+                  eventType:
+                    type: string
+                    example: "recoveryComplete"
+                  recoveredAt:
+                    type: number
+                    description: Timestamp da recuperação
+                  restoredTick:
+                    type: number
+                    description: Tick restaurado
+                  restoredTimestamp:
+                    type: number
+                    description: Timestamp simulado restaurado
+              timestamp:
+                type: number
+
 channels:
   plantUpdate:
     address: plantUpdate
@@ -672,6 +741,13 @@ channels:
       publish.message:
         $ref: '#/components/messages/Command'
     description: Canal para envio de comandos do front end para o simulador
+
+  session:
+    address: session:{sessionId}
+    messages:
+      subscribe.message:
+        $ref: '#/components/messages/SessionEvent'
+    description: Canal de eventos de uma sessão específica. Usar session:{sessionId} para se inscrever.
 
 operations:
   plantUpdate.subscribe:
@@ -780,6 +856,14 @@ operations:
     summary: 'Enviar comandos de simulação (ex: start, pause, reset)'
     messages:
       - $ref: '#/channels/command/messages/publish.message'
+
+  session.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/session'
+    summary: Receber eventos de uma sessão específica (state changes, recovery, simulation events)
+    messages:
+      - $ref: '#/channels/session/messages/subscribe.message'
 
 components:
   messages:
@@ -1379,3 +1463,55 @@ components:
               config:
                 type: object
                 description: Configurações customizadas (opcional, usado com custom)
+
+    SessionEvent:
+      name: SessionEvent
+      title: Evento de Sessão
+      description: Eventos emitidos por sessões de simulação (state changes, recovery, errors, heartbeats)
+      payload:
+        type: object
+        properties:
+          type:
+            type: string
+            enum: ["STATE_CHANGE", "INIT_COMPLETE", "ERROR", "HEARTBEAT", "EVENT", "WORKER_CRASHED"]
+            description: Tipo do evento de sessão
+          sessionId:
+            type: string
+            description: ID da sessão que emitiu o evento
+          data:
+            type: object
+            description: Dados específicos do evento
+            properties:
+              status:
+                type: string
+                enum: ["idle", "running", "paused", "stopped", "expired", "interrupted"]
+                description: Novo status da sessão (para STATE_CHANGE)
+              eventType:
+                type: string
+                enum: ["tick", "carCreated", "carMoved", "carCompleted", "bufferIn", "bufferOut", "stopStarted", "stopEnded", "oeeCalculated", "oeeShiftEnd", "mttrMtbfCalculated", "recoveryComplete", "reworkIn", "reworkOut"]
+                description: Tipo de evento de simulação (para EVENT)
+              message:
+                type: string
+                description: Mensagem de erro (para ERROR)
+              stack:
+                type: string
+                description: Stack trace do erro (para ERROR)
+              memoryUsage:
+                type: object
+                description: Uso de memória do worker (para HEARTBEAT)
+              uptime:
+                type: number
+                description: Uptime do worker em segundos (para HEARTBEAT)
+              recoveredAt:
+                type: number
+                description: Timestamp da recuperação (para recoveryComplete)
+              restoredTick:
+                type: number
+                description: Tick restaurado (para recoveryComplete)
+              restoredTimestamp:
+                type: number
+                description: Timestamp simulado restaurado (para recoveryComplete)
+          timestamp:
+            type: number
+            description: Timestamp do evento
+        required: ["type", "sessionId", "timestamp"]

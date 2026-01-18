@@ -196,6 +196,9 @@ export class SocketServer {
             // Register client in backpressure manager
             this.backpressureManager.registerClient(socket.id);
 
+            // Setup session-specific event handlers
+            this.setupSessionHandlers(socket);
+
             // Permitir que clientes se inscrevam em canais específicos
             socket.on('subscribe', (channel: string) => {
                 if (!this.allowedChannels.has(channel)) {
@@ -897,6 +900,106 @@ export class SocketServer {
             'parse error': 'Invalid packet received from client'
         };
         return explanations[reason] || `Unknown reason: ${reason}`;
+    }
+
+    // ============================================================
+    // SESSION-BASED ROOM SUPPORT
+    // ============================================================
+
+    /**
+     * Get the session room name for a given session and channel
+     */
+    private getSessionRoom(sessionId: string, channel: string): string {
+        return `session:${sessionId}:${channel}`;
+    }
+
+    /**
+     * Subscribe a socket to a session's events
+     * Clients can call this to receive events from a specific session
+     */
+    public subscribeToSession(socket: Socket, sessionId: string, channel: string): void {
+        const room = this.getSessionRoom(sessionId, channel);
+        socket.join(room);
+
+        // Track subscription
+        const subs = this.socketSubscriptions.get(socket.id);
+        if (subs) subs.add(room);
+
+        // Reset delta state for this socket/channel
+        this.deltaService.resetSocketChannel(`${room}:${socket.id}`);
+
+        console.log(`[SOCKET] Client ${socket.id} subscribed to session ${sessionId}:${channel}`);
+    }
+
+    /**
+     * Unsubscribe a socket from a session's events
+     */
+    public unsubscribeFromSession(socket: Socket, sessionId: string, channel: string): void {
+        const room = this.getSessionRoom(sessionId, channel);
+        socket.leave(room);
+
+        // Remove from tracking
+        const subs = this.socketSubscriptions.get(socket.id);
+        if (subs) subs.delete(room);
+
+        console.log(`[SOCKET] Client ${socket.id} unsubscribed from session ${sessionId}:${channel}`);
+    }
+
+    /**
+     * Broadcast data to all clients subscribed to a session's channel
+     */
+    public broadcastToSession(sessionId: string, channel: string, data: any): void {
+        if (!this.io) return;
+
+        const room = this.getSessionRoom(sessionId, channel);
+        const payload: SocketEventData = {
+            type: channel,
+            data,
+            timestamp: Date.now()
+        };
+
+        this.io.to(room).emit(channel, payload);
+    }
+
+    /**
+     * Emit a session-specific event (with session context)
+     */
+    public emitSessionEvent(sessionId: string, eventType: string, data: any): void {
+        if (!this.io) return;
+
+        const room = this.getSessionRoom(sessionId, 'events');
+        const payload: SocketEventData = {
+            type: eventType,
+            data: { ...data, sessionId },
+            timestamp: Date.now()
+        };
+
+        this.io.to(room).emit('events', payload);
+    }
+
+    /**
+     * Setup session-specific event handlers for a socket
+     * Call this after socket connection to enable session subscriptions
+     */
+    public setupSessionHandlers(socket: Socket): void {
+        // Subscribe to a session
+        socket.on('subscribe:session', (data: { sessionId: string; channel: string }) => {
+            if (!data.sessionId || !data.channel) {
+                socket.emit('error', { message: 'sessionId and channel are required' });
+                return;
+            }
+            if (!this.allowedChannels.has(data.channel)) {
+                socket.emit('error', { message: `Invalid channel: ${data.channel}` });
+                return;
+            }
+            this.subscribeToSession(socket, data.sessionId, data.channel);
+        });
+
+        // Unsubscribe from a session
+        socket.on('unsubscribe:session', (data: { sessionId: string; channel: string }) => {
+            if (!data.sessionId || !data.channel) return;
+            this.unsubscribeFromSession(socket, data.sessionId, data.channel);
+        });
     }
 
     public close(): void {

@@ -49,6 +49,18 @@ export function getActiveFlowPlant(): IFlowPlant {
     return activeFlowPlant;
 }
 
+/**
+ * Set the active plant configuration.
+ * Used by Worker Threads to load session-specific configs.
+ */
+export function setActiveFlowPlant(config: IFlowPlant): void {
+    activeFlowPlant = config;
+    flowPlantShopKeys = Object.keys(config.shops);
+}
+
+// Re-export FlowPlant for use by workers
+export { FlowPlant } from "../config/flowPlant";
+
 
 export class PlantFactory {
 

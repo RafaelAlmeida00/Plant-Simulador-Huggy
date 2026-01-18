@@ -160,4 +160,48 @@ export class StopLineService {
     public resetAndStart(): void {
        this.stopLineFactory.resetFactory();
     }
+
+    /**
+     * Restore active stops for recovery
+     * This recreates stops that were IN_PROGRESS when the server stopped
+     */
+    public restoreActiveStops(activeStops: Array<{
+        stopId: string;
+        shop: string;
+        line: string;
+        station: string;
+        reason?: string;
+        type?: string;
+        category?: string;
+        severity?: string;
+        startTime: number;
+        durationMs?: number;
+    }>): void {
+        for (const stopData of activeStops) {
+            // Create a stop key for the map
+            const stopKey = `${stopData.shop}-${stopData.line}-${stopData.station}-${stopData.stopId}`;
+
+            // Create the stop object
+            const stop: IStopLine = {
+                id: parseInt(stopData.stopId, 10) || Date.now(),
+                shop: stopData.shop,
+                line: stopData.line,
+                station: stopData.station,
+                reason: stopData.reason || 'Recovered stop',
+                type: (stopData.type as any) || 'RANDOM_GENERATE',
+                category: (stopData.category as any) || 'MACHINE',
+                severity: (stopData.severity as any) || 'MEDIUM',
+                startTime: stopData.startTime,
+                endTime: stopData.durationMs
+                    ? stopData.startTime + stopData.durationMs
+                    : stopData.startTime + 60000, // Default 1 minute if no duration
+                durationMs: stopData.durationMs || 60000,
+                status: 'IN_PROGRESS'
+            };
+
+            this.stopsMap.set(stopKey, stop);
+        }
+
+        logger().info(`[StopLineService] Restored ${activeStops.length} active stops for recovery`);
+    }
 }

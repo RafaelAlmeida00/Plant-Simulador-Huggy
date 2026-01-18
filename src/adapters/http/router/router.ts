@@ -13,10 +13,13 @@ import HealthController from '../controllers/HealthController';
 import OEEController from '../controllers/OEEController';
 import MTTRMTBFController from '../controllers/MTTRMTBFController';
 import ConfigController from '../controllers/ConfigController';
+import { SessionController } from '../controllers/SessionController';
+import { SessionManager } from '../../../sessions/SessionManager';
 import { authMiddleware } from '../middleware';
 
 class AppRouter {
     router: express.Router;
+    private sessionController: SessionController | null = null;
 
     constructor() {
         this.router = express.Router();
@@ -95,9 +98,37 @@ class AppRouter {
         this.router.delete('/api/config/:id', authMiddleware, (req, res) => ConfigController.delete(req, res));
     }
 
+    /**
+     * Register session routes with the provided SessionManager
+     * Must be called after SessionManager is initialized
+     */
+    registerSessionRoutes(sessionManager: SessionManager) {
+        this.sessionController = new SessionController(sessionManager);
+        const controller = this.sessionController;
+
+        // Sessions API - Session lifecycle management
+        // Note: Static routes must be before :id routes to avoid route conflict
+        this.router.get('/api/sessions/stats', authMiddleware, (req, res) => controller.getStats(req, res));
+        this.router.get('/api/sessions/interrupted', authMiddleware, (req, res) => controller.listInterrupted(req, res));
+        this.router.get('/api/sessions', authMiddleware, (req, res) => controller.list(req, res));
+        this.router.get('/api/sessions/:id/can-recover', authMiddleware, (req, res) => controller.canRecover(req, res));
+        this.router.get('/api/sessions/:id', authMiddleware, (req, res) => controller.getById(req, res));
+        this.router.post('/api/sessions', authMiddleware, (req, res) => controller.create(req, res));
+        this.router.post('/api/sessions/:id/start', authMiddleware, (req, res) => controller.start(req, res));
+        this.router.post('/api/sessions/:id/pause', authMiddleware, (req, res) => controller.pause(req, res));
+        this.router.post('/api/sessions/:id/resume', authMiddleware, (req, res) => controller.resume(req, res));
+        this.router.post('/api/sessions/:id/stop', authMiddleware, (req, res) => controller.stop(req, res));
+        this.router.post('/api/sessions/:id/recover', authMiddleware, (req, res) => controller.recover(req, res));
+        this.router.post('/api/sessions/:id/discard', authMiddleware, (req, res) => controller.discard(req, res));
+        this.router.delete('/api/sessions/:id', authMiddleware, (req, res) => controller.delete(req, res));
+    }
+
     getRouter() {
         return this.router;
     }
 }
 
-export default new AppRouter().getRouter();
+// Export both the router instance and the AppRouter class for session route registration
+const appRouter = new AppRouter();
+export const registerSessionRoutes = (sessionManager: SessionManager) => appRouter.registerSessionRoutes(sessionManager);
+export default appRouter.getRouter();

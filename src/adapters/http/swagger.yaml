@@ -778,6 +778,336 @@ paths:
           description: Configuração definida como padrão
         '404':
           description: Configuração não encontrada
+
+  # Session Management API
+  /api/sessions:
+    get:
+      summary: Lista todas as sessões do usuário
+      tags:
+        - Sessions
+      responses:
+        '200':
+          description: Lista de sessões
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Session'
+                  count:
+                    type: integer
+    post:
+      summary: Cria uma nova sessão em estado idle
+      tags:
+        - Sessions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionCreate'
+      responses:
+        '201':
+          description: Sessão criada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Session'
+                  message:
+                    type: string
+        '429':
+          description: Limite de sessões atingido
+
+  /api/sessions/stats:
+    get:
+      summary: Obtém estatísticas de sessões
+      tags:
+        - Sessions
+      responses:
+        '200':
+          description: Estatísticas de sessões
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      userActiveSessions:
+                        type: integer
+                      globalActiveSessions:
+                        type: integer
+                      maxSessionsPerUser:
+                        type: integer
+                      maxGlobalSessions:
+                        type: integer
+                      userCanCreate:
+                        type: boolean
+
+  /api/sessions/interrupted:
+    get:
+      summary: Lista sessões interrompidas disponíveis para recuperação
+      tags:
+        - Sessions
+        - Recovery
+      responses:
+        '200':
+          description: Lista de sessões interrompidas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Session'
+                  count:
+                    type: integer
+                  message:
+                    type: string
+
+  /api/sessions/{id}:
+    get:
+      summary: Obtém detalhes de uma sessão
+      tags:
+        - Sessions
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Sessão encontrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Session'
+        '404':
+          description: Sessão não encontrada
+    delete:
+      summary: Deleta uma sessão e todos os seus dados
+      tags:
+        - Sessions
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Sessão deletada
+        '404':
+          description: Sessão não encontrada
+
+  /api/sessions/{id}/start:
+    post:
+      summary: Inicia uma sessão (spawn worker)
+      tags:
+        - Sessions
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Sessão iniciada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Session'
+                  message:
+                    type: string
+        '400':
+          description: Sessão não pode ser iniciada (estado inválido)
+        '404':
+          description: Sessão não encontrada
+        '429':
+          description: Limite de sessões ativas atingido
+
+  /api/sessions/{id}/pause:
+    post:
+      summary: Pausa uma sessão em execução
+      tags:
+        - Sessions
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Sessão pausada
+        '400':
+          description: Sessão não pode ser pausada
+        '404':
+          description: Sessão não encontrada
+
+  /api/sessions/{id}/resume:
+    post:
+      summary: Retoma uma sessão pausada
+      tags:
+        - Sessions
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Sessão retomada
+        '400':
+          description: Sessão não pode ser retomada
+        '404':
+          description: Sessão não encontrada
+
+  /api/sessions/{id}/stop:
+    post:
+      summary: Para uma sessão (mantém dados)
+      tags:
+        - Sessions
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Sessão parada
+        '400':
+          description: Sessão não pode ser parada
+        '404':
+          description: Sessão não encontrada
+
+  /api/sessions/{id}/can-recover:
+    get:
+      summary: Verifica se uma sessão pode ser recuperada
+      tags:
+        - Sessions
+        - Recovery
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Status de recuperabilidade
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      canRecover:
+                        type: boolean
+                  message:
+                    type: string
+
+  /api/sessions/{id}/recover:
+    post:
+      summary: Recupera uma sessão interrompida
+      description: Restaura o estado da sessão a partir dos snapshots salvos e retoma a simulação
+      tags:
+        - Sessions
+        - Recovery
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Sessão recuperada com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Session'
+                  message:
+                    type: string
+        '400':
+          description: Sessão não pode ser recuperada (estado inválido ou dados insuficientes)
+        '404':
+          description: Sessão não encontrada
+        '429':
+          description: Limite de sessões ativas atingido
+
+  /api/sessions/{id}/discard:
+    post:
+      summary: Descarta uma sessão interrompida
+      description: Marca a sessão como stopped, mantendo os dados históricos
+      tags:
+        - Sessions
+        - Recovery
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Sessão descartada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Session'
+                  message:
+                    type: string
+        '400':
+          description: Sessão não pode ser descartada
+        '404':
+          description: Sessão não encontrada
+
 components:
   schemas:
     CarEvent:
@@ -995,3 +1325,76 @@ components:
         count:
           type: integer
           description: Quantidade de registros retornados na página atual
+    Session:
+      type: object
+      description: Sessão de simulação
+      properties:
+        id:
+          type: string
+          description: ID único da sessão (UUID)
+        user_id:
+          type: string
+          description: ID do usuário proprietário
+        name:
+          type: string
+          description: Nome opcional da sessão
+        config_id:
+          type: string
+          description: ID da configuração da planta usada
+        config_snapshot:
+          type: string
+          description: JSON string da configuração copiada no momento da criação
+        duration_days:
+          type: integer
+          description: Duração em dias antes de expirar
+          default: 7
+        speed_factor:
+          type: integer
+          description: Fator de velocidade da simulação
+          default: 60
+        status:
+          type: string
+          enum: [idle, running, paused, stopped, expired, interrupted]
+          description: Estado atual da sessão
+        started_at:
+          type: integer
+          description: Timestamp de início (ms)
+        stopped_at:
+          type: integer
+          description: Timestamp de parada (ms)
+        expires_at:
+          type: integer
+          description: Timestamp de expiração (ms)
+        interrupted_at:
+          type: integer
+          description: Timestamp de interrupção por restart do servidor (ms)
+        simulated_timestamp:
+          type: integer
+          description: Último timestamp simulado (ms)
+        current_tick:
+          type: integer
+          description: Último tick da simulação
+        last_snapshot_at:
+          type: integer
+          description: Timestamp do último snapshot salvo (ms)
+        created_at:
+          type: integer
+          description: Timestamp de criação (ms)
+    SessionCreate:
+      type: object
+      description: Dados para criar uma nova sessão
+      properties:
+        name:
+          type: string
+          description: Nome opcional da sessão
+        configId:
+          type: string
+          description: ID da configuração da planta (opcional, usa default se não fornecido)
+        durationDays:
+          type: integer
+          description: Duração em dias antes de expirar
+          default: 7
+        speedFactor:
+          type: integer
+          description: Fator de velocidade da simulação
+          default: 60

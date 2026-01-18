@@ -27,8 +27,12 @@ export class SimulationEventEmitter {
     private lastStopsEmit: number = 0;
     private lastOEEEmit: number = 0;
     private lastCarsEmit: number = 0; // Controle separado para emissão de cars
+    private lastPlantPersist: number = 0; // Controle para persistência de plant snapshots
     private pendingOEEDataMap: Map<string, OEEData> = new Map();
     private flowPlantConfig = getActiveFlowPlant();
+
+    // Persistence interval for recovery (30 minutes)
+    private readonly SNAPSHOT_PERSIST_INTERVAL_MS = 30 * 60 * 1000;
 
     private constructor() {
         this.carEventRepo = new CarEventRepository();
@@ -311,17 +315,61 @@ export class SimulationEventEmitter {
         socketServer.emitAllStops(stops);
     }
 
-    public async emitAllBuffers(buffers: Map<string, IBuffer>, timestamp: number): Promise<void> {
+    public async emitAllBuffers(buffers: Map<string, IBuffer>, timestamp: number, sessionId?: string): Promise<void> {
         const now = Date.now();
 
         if (now - this.lastBufferEmit >= this.flowPlantConfig.BUFFER_EMIT_INTERVAL) {
             this.lastBufferEmit = now;
             socketServer.emitAllBuffers(buffers);
         }
+
+        // Persist buffer states every 30 minutes for recovery
+        if (this.persistEnabled && (now - this.lastBufferPersist >= this.SNAPSHOT_PERSIST_INTERVAL_MS)) {
+            this.lastBufferPersist = now;
+            try {
+                for (const buffer of buffers.values()) {
+                    await this.bufferStateRepo.create({
+                        session_id: sessionId,
+                        buffer_id: buffer.id,
+                        from_location: buffer.from,
+                        to_location: buffer.to,
+                        capacity: buffer.capacity,
+                        current_count: buffer.currentCount,
+                        status: buffer.status,
+                        type: buffer.type,
+                        car_ids: buffer.cars.map(c => c.id),
+                        timestamp
+                    });
+                }
+                console.log(`[EVENT_EMITTER] Persisted ${buffers.size} buffer states for recovery`);
+            } catch (error) {
+                console.error('[EVENT_EMITTER] Error persisting buffer states:', error);
+            }
+        }
     }
 
-    public async emitPlantState(snapshot: PlantSnapshot): Promise<void> {
+    public async emitPlantState(snapshot: PlantSnapshot, sessionId?: string): Promise<void> {
         socketServer.emitPlantState(snapshot);
+
+        // Persist plant snapshot every 30 minutes for recovery
+        const now = Date.now();
+        if (this.persistEnabled && (now - this.lastPlantPersist >= this.SNAPSHOT_PERSIST_INTERVAL_MS)) {
+            this.lastPlantPersist = now;
+            try {
+                await this.plantSnapshotRepo.create({
+                    session_id: sessionId,
+                    timestamp: snapshot.timestamp,
+                    total_stations: snapshot.totalStations,
+                    total_occupied: snapshot.totalOccupied,
+                    total_free: snapshot.totalFree,
+                    total_stopped: snapshot.totalStopped,
+                    snapshot_data: JSON.stringify(snapshot)
+                });
+                console.log(`[EVENT_EMITTER] Persisted plant snapshot for recovery`);
+            } catch (error) {
+                console.error('[EVENT_EMITTER] Error persisting plant snapshot:', error);
+            }
+        }
     }
 
     public emitHealth(status: {

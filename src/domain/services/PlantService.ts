@@ -328,4 +328,50 @@ export class PlantService {
         // (no need to reassign - they're the same objects)
     }
 
+    /**
+     * Restore plant state from a snapshot for recovery
+     * This updates station states (occupied, isStopped) based on the persisted snapshot
+     */
+    public restoreFromSnapshot(snapshot: PlantSnapshot): void {
+        if (!snapshot || !snapshot.shops) {
+            logger().warn('[PlantService] Invalid snapshot for recovery');
+            return;
+        }
+
+        let restoredStations = 0;
+
+        // Iterate through shops in the snapshot
+        for (const shopSnapshot of snapshot.shops) {
+            if (!shopSnapshot.lines) continue;
+
+            // Get lines as array (handle both Map and Record types)
+            const linesArray = shopSnapshot.lines instanceof Map
+                ? Array.from(shopSnapshot.lines.values())
+                : Object.values(shopSnapshot.lines);
+
+            // Iterate through lines in the shop
+            for (const lineSnapshot of linesArray) {
+                if (!lineSnapshot || !lineSnapshot.stations) continue;
+
+                // Iterate through stations in the line
+                for (const stationSnapshot of lineSnapshot.stations) {
+                    const station = this.stations.get(stationSnapshot.id);
+                    if (station) {
+                        // Restore station state
+                        station.occupied = stationSnapshot.occupied || false;
+                        station.isStopped = stationSnapshot.isStopped || false;
+                        station.stopReason = stationSnapshot.stopReason;
+
+                        // Note: We don't restore currentCar as it would need full car reconstruction
+                        // The occupied flag is sufficient for simulation continuity
+
+                        restoredStations++;
+                    }
+                }
+            }
+        }
+
+        logger().info(`[PlantService] Restored ${restoredStations} station states from snapshot`);
+    }
+
 }

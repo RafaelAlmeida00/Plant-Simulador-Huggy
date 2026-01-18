@@ -188,4 +188,31 @@ export class BufferService {
             buffer.status = "AVAILABLE";
         }
     }
+
+    /**
+     * Restore buffer states for recovery
+     * This updates buffer counts and status based on persisted state
+     */
+    public restoreBufferStates(bufferStates: Array<{
+        bufferId: string;
+        carIds: string[];
+        currentCount: number;
+        status: string;
+    }>): void {
+        for (const state of bufferStates) {
+            const buffer = this.buffers.get(state.bufferId);
+            if (buffer) {
+                // Update buffer properties
+                buffer.currentCount = state.currentCount;
+                buffer.status = state.status as 'EMPTY' | 'AVAILABLE' | 'FULL';
+
+                // Note: We don't restore actual car objects since they would need full reconstruction
+                // The currentCount and status are sufficient for simulation continuity
+                logger().debug(`[BufferService] Restored buffer ${state.bufferId}: count=${state.currentCount}, status=${state.status}`);
+            } else {
+                logger().warn(`[BufferService] Buffer ${state.bufferId} not found during recovery`);
+            }
+        }
+        logger().info(`[BufferService] Restored ${bufferStates.length} buffer states for recovery`);
+    }
 }

@@ -613,6 +613,25 @@ interface IStopLine {
 | `/api/mttr-mtbf` | GET | MTTR/MTBF metrics |
 | `/api/config` | GET, POST, PUT | Plant configuration management |
 | `/api/health` | GET | System health status |
+| `/api/sessions` | GET, POST, DELETE | Session lifecycle management |
+
+### Session API Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/sessions` | POST | Create new session (idle state) |
+| `/api/sessions` | GET | List user's sessions |
+| `/api/sessions/stats` | GET | Get session count statistics |
+| `/api/sessions/interrupted` | GET | List interrupted sessions (for recovery) |
+| `/api/sessions/:id` | GET | Get session details |
+| `/api/sessions/:id/can-recover` | GET | Check if session can be recovered |
+| `/api/sessions/:id/start` | POST | Start session (spawn worker) |
+| `/api/sessions/:id/pause` | POST | Pause running session |
+| `/api/sessions/:id/resume` | POST | Resume paused session |
+| `/api/sessions/:id/stop` | POST | Stop session (keep data) |
+| `/api/sessions/:id/recover` | POST | Recover interrupted session |
+| `/api/sessions/:id/discard` | POST | Discard interrupted session |
+| `/api/sessions/:id` | DELETE | Delete session and all data |
 
 ---
 
@@ -791,11 +810,117 @@ DB_TYPE=sqlite npm run dev
 7. **Emit events** through `SimulationEventEmitter` for cross-cutting concerns
 8. **Throttle appropriately** - Don't flood WebSocket or database
 
+## Session Management System
+
+### Multi-Session Architecture
+
+The simulator supports multiple concurrent simulation sessions using Worker Threads for full memory isolation:
+
+```
+MAIN THREAD                          WORKER THREADS
+┌─────────────────────┐              ┌──────────────────┐
+│ SessionManager      │──spawns───►  │ Worker (session1)│
+│ WorkerPoolManager   │              │  - ServiceLocator│
+│ SessionController   │              │  - SimulationClock
+│ RecoveryService     │◄──events──   │  - SimulationFlow│
+│ SocketServer        │              └──────────────────┘
+└─────────────────────┘              ┌──────────────────┐
+                                     │ Worker (session2)│
+                                     └──────────────────┘
+```
+
+### Session Lifecycle
+
+```
+idle ──► running ──► paused ──► stopped
+  │         │           │          ▲
+  │         │           └──────────┤
+  │         └──────────────────────┤
+  │                                │
+  │      ┌── interrupted ◄─(server restart)
+  │      │
+  │      ├─► running (via /recover)
+  │      └─► stopped (via /discard)
+  │
+  └────────► expired (via timeout)
+```
+
+**Session States:**
+- `idle` - Created but not started
+- `running` - Simulation actively running in worker
+- `paused` - Simulation paused, worker still active
+- `stopped` - Simulation stopped, data preserved
+- `expired` - Session exceeded duration limit
+- `interrupted` - Server restarted while session was running/paused
+
+### Session Limits
+
+| Limit | Default | Description |
+|-------|---------|-------------|
+| Global Active Sessions | 20 | Maximum sessions across all users |
+| Per-User Active Sessions | 2 | Maximum active sessions per user |
+| Session Duration | 7 days | Default expiration after start |
+
+### Session Recovery System
+
+When the server restarts, all Worker Threads are destroyed. The Recovery System:
+
+1. **On Server Startup:**
+   - Marks all `running`/`paused` sessions as `interrupted`
+   - Marks expired sessions as `expired`
+   - Marks stale interrupted sessions (>24h) as `stopped`
+
+2. **Recovery Data Sources:**
+   - `plant_snapshots` - Last plant state (every 30 minutes)
+   - `buffer_states` - Buffer contents (every 30 minutes)
+   - `car_events` - Completed car IDs (COMPLETED event type)
+   - `stop_events` - Active stops (IN_PROGRESS status)
+   - `sessions` - Clock state (simulated_timestamp, current_tick)
+
+3. **Recovery Flow:**
+   ```
+   User → GET /api/sessions/interrupted → Lists recoverable sessions
+   User → GET /api/sessions/:id/can-recover → Checks if data exists
+   User → POST /api/sessions/:id/recover → Spawns worker, restores state
+   ```
+
+### Key Session Files
+
+| File | Purpose |
+|------|---------|
+| `src/sessions/SessionManager.ts` | Session lifecycle management |
+| `src/sessions/WorkerPoolManager.ts` | Worker Thread management |
+| `src/sessions/RecoveryService.ts` | Recovery data collection and restoration |
+| `src/workers/SimulationWorker.ts` | Worker entry point |
+| `src/adapters/http/controllers/SessionController.ts` | HTTP endpoints |
+| `src/adapters/http/repositories/SessionRepository.ts` | Database access |
+
 ---
 
-* If you are a IA or is a IA Claude Model by Anthropic, update this file always that you make a edit and get new informations about the project, change the architeture, logic and rules of the simulator. Read and do the command on file TIMELINE.md. Also, update the data change below:
+## Recent Changes (2026-01-18)
 
-*Last updated: 2026-01-17 15:30:00*
+### Session Recovery System Implementation
+
+**New Files:**
+- `src/sessions/RecoveryService.ts` - Handles server startup recovery and session restoration
+- `src/workers/SimulationWorker.ts` - Worker Thread entry point with RECOVER command
+
+**Modified Files:**
+- `SessionRepository.ts` - Added 'interrupted' status, recovery methods
+- `SessionManager.ts` - Added recovery integration
+- `WorkerPoolManager.ts` - Added RECOVER command type
+- `CarService.ts` / `CarFactory.ts` - Added `restoreCompletedCars()`
+- `BufferService.ts` - Added `restoreBufferStates()`
+- `StopLineService.ts` - Added `restoreActiveStops()`
+- `PlantService.ts` - Added `restoreFromSnapshot()`
+- `SimulationClock.ts` - Added `setInitialState()`
+- Database schemas - Added `simulated_timestamp`, `current_tick`, `last_snapshot_at`, `interrupted_at` columns
+
+**New API Endpoints:**
+- `GET /api/sessions/interrupted` - List interrupted sessions
+- `GET /api/sessions/:id/can-recover` - Check recoverability
+- `POST /api/sessions/:id/recover` - Recover session
+- `POST /api/sessions/:id/discard` - Discard interrupted session
 
 ---
 
@@ -832,3 +957,11 @@ effectiveProductionTime = productionTime * numLines
 diffTime = effectiveProductionTime - (taktTime * carsProduction)
 oee = ((taktTime * carsProduction) / effectiveProductionTime) * 100
 ```
+
+---
+
+* If you are a IA or is a IA Claude Model by Anthropic, update this file always that you make a edit and get new informations about the project, change the architeture, logic and rules of the simulator. Read and do the command on file TIMELINE.md. Also, update the data change below:
+
+*Last updated: 2026-01-18 12:00:00*
+
+---

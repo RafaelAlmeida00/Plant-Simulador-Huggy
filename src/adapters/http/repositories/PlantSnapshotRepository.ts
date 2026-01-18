@@ -5,6 +5,7 @@ import { BaseRepository } from './BaseRepository';
 
 export interface IPlantSnapshotRecord {
     id?: number;
+    session_id?: string;
     timestamp: number;
     total_stations: number;
     total_occupied: number;
@@ -45,19 +46,20 @@ export class PlantSnapshotRepository extends BaseRepository<IPlantSnapshotRecord
 
     public async create(entity: Partial<IPlantSnapshotRecord>): Promise<IPlantSnapshotRecord> {
         const db = await this.getDb();
-        
+
         const sql = `
-            INSERT INTO ${this.tableName} 
-            (timestamp, total_stations, total_occupied, total_free, total_stopped, snapshot_data)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO ${this.tableName}
+            (session_id, timestamp, total_stations, total_occupied, total_free, total_stopped, snapshot_data)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ${this.getReturningClause(db)}
         `;
-        
-        const snapshotJson = typeof entity.snapshot_data === 'string' 
-            ? entity.snapshot_data 
+
+        const snapshotJson = typeof entity.snapshot_data === 'string'
+            ? entity.snapshot_data
             : JSON.stringify(entity.snapshot_data);
-            
+
         const params = [
+            entity.session_id ?? null,
             entity.timestamp,
             entity.total_stations,
             entity.total_occupied,
@@ -67,11 +69,11 @@ export class PlantSnapshotRepository extends BaseRepository<IPlantSnapshotRecord
         ];
 
         const result = await db.query<IPlantSnapshotRecord>(this.convertPlaceholders(db, sql), params);
-        
+
         if (result.rows.length > 0) {
             return result.rows[0];
         }
-        
+
         const lastId = await db.query<{ id: number }>('SELECT last_insert_rowid() as id');
         return { ...entity, id: lastId.rows[0]?.id } as IPlantSnapshotRecord;
     }

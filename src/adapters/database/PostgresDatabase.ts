@@ -115,10 +115,33 @@ export class PostgresDatabase implements IDatabase {
     private async initializeTables(): Promise<void> {
         if (!this.pool) return;
 
+        // Tabela de sessões de simulação
+        await this.pool.query(`
+            CREATE TABLE IF NOT EXISTS sessions (
+                id VARCHAR(50) PRIMARY KEY,
+                user_id VARCHAR(50) NOT NULL,
+                name VARCHAR(255),
+                config_id VARCHAR(50),
+                config_snapshot TEXT,
+                duration_days INTEGER NOT NULL DEFAULT 7,
+                speed_factor INTEGER NOT NULL DEFAULT 60,
+                status VARCHAR(20) NOT NULL DEFAULT 'idle',
+                started_at BIGINT,
+                expires_at BIGINT,
+                stopped_at BIGINT,
+                simulated_timestamp BIGINT,
+                current_tick INTEGER DEFAULT 0,
+                last_snapshot_at BIGINT,
+                interrupted_at BIGINT,
+                created_at BIGINT DEFAULT EXTRACT(EPOCH FROM NOW()) * 1000
+            )
+        `);
+
         // Tabela de eventos (movimentações de carros)
         await this.pool.query(`
             CREATE TABLE IF NOT EXISTS car_events (
                 id SERIAL PRIMARY KEY,
+                session_id VARCHAR(50),
                 car_id VARCHAR(50) NOT NULL,
                 event_type VARCHAR(50) NOT NULL,
                 shop VARCHAR(100) NOT NULL,
@@ -134,6 +157,7 @@ export class PostgresDatabase implements IDatabase {
         await this.pool.query(`
             CREATE TABLE IF NOT EXISTS stop_events (
                 id SERIAL PRIMARY KEY,
+                session_id VARCHAR(50),
                 stop_id VARCHAR(50) NOT NULL,
                 shop VARCHAR(100) NOT NULL,
                 line VARCHAR(100) NOT NULL,
@@ -154,6 +178,7 @@ export class PostgresDatabase implements IDatabase {
         await this.pool.query(`
             CREATE TABLE IF NOT EXISTS buffer_states (
                 id SERIAL PRIMARY KEY,
+                session_id VARCHAR(50),
                 buffer_id VARCHAR(100) NOT NULL,
                 from_location VARCHAR(100) NOT NULL,
                 to_location VARCHAR(100) NOT NULL,
@@ -171,6 +196,7 @@ export class PostgresDatabase implements IDatabase {
         await this.pool.query(`
             CREATE TABLE IF NOT EXISTS plant_snapshots (
                 id SERIAL PRIMARY KEY,
+                session_id VARCHAR(50),
                 timestamp BIGINT NOT NULL,
                 total_stations INTEGER NOT NULL,
                 total_occupied INTEGER NOT NULL,
@@ -185,6 +211,7 @@ export class PostgresDatabase implements IDatabase {
         await this.pool.query(`
             CREATE TABLE IF NOT EXISTS oee (
                 id SERIAL PRIMARY KEY,
+                session_id VARCHAR(50),
                 date VARCHAR(20) NOT NULL,
                 shop VARCHAR(100) NOT NULL,
                 line VARCHAR(100) NOT NULL,
@@ -201,6 +228,7 @@ export class PostgresDatabase implements IDatabase {
         await this.pool.query(`
             CREATE TABLE IF NOT EXISTS mttr_mtbf (
                 id SERIAL PRIMARY KEY,
+                session_id VARCHAR(50),
                 date VARCHAR(20) NOT NULL,
                 shop VARCHAR(100) NOT NULL,
                 line VARCHAR(100) NOT NULL,
@@ -222,17 +250,31 @@ export class PostgresDatabase implements IDatabase {
             )
         `);
 
+        // Índices para tabela de sessões
+        await this.pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+            CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+            CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+            CREATE INDEX IF NOT EXISTS idx_sessions_user_status ON sessions(user_id, status);
+        `);
+
         // Índices básicos
         await this.pool.query(`
             CREATE INDEX IF NOT EXISTS idx_car_events_timestamp ON car_events(timestamp);
             CREATE INDEX IF NOT EXISTS idx_car_events_car_id ON car_events(car_id);
+            CREATE INDEX IF NOT EXISTS idx_car_events_session_id ON car_events(session_id);
             CREATE INDEX IF NOT EXISTS idx_stop_events_timestamp ON stop_events(start_time);
+            CREATE INDEX IF NOT EXISTS idx_stop_events_session_id ON stop_events(session_id);
             CREATE INDEX IF NOT EXISTS idx_buffer_states_timestamp ON buffer_states(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_buffer_states_session_id ON buffer_states(session_id);
             CREATE INDEX IF NOT EXISTS idx_plant_snapshots_timestamp ON plant_snapshots(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_plant_snapshots_session_id ON plant_snapshots(session_id);
             CREATE INDEX IF NOT EXISTS idx_oee_date ON oee(date);
             CREATE INDEX IF NOT EXISTS idx_oee_shop ON oee(shop);
+            CREATE INDEX IF NOT EXISTS idx_oee_session_id ON oee(session_id);
             CREATE INDEX IF NOT EXISTS idx_mttr_mtbf_date ON mttr_mtbf(date);
             CREATE INDEX IF NOT EXISTS idx_mttr_mtbf_shop ON mttr_mtbf(shop);
+            CREATE INDEX IF NOT EXISTS idx_mttr_mtbf_session_id ON mttr_mtbf(session_id);
             CREATE INDEX IF NOT EXISTS idx_config_plant_name ON config_plant(name);
             CREATE INDEX IF NOT EXISTS idx_config_plant_default ON config_plant(is_default);
         `);
@@ -243,6 +285,7 @@ export class PostgresDatabase implements IDatabase {
             CREATE INDEX IF NOT EXISTS idx_car_events_shop_line ON car_events(shop, line);
             CREATE INDEX IF NOT EXISTS idx_car_events_shop_line_ts ON car_events(shop, line, timestamp DESC);
             CREATE INDEX IF NOT EXISTS idx_car_events_event_type ON car_events(event_type);
+            CREATE INDEX IF NOT EXISTS idx_car_events_session_ts ON car_events(session_id, timestamp DESC);
 
             -- stop_events: queries por status e shop+line
             CREATE INDEX IF NOT EXISTS idx_stop_events_status ON stop_events(status);
@@ -250,19 +293,26 @@ export class PostgresDatabase implements IDatabase {
             CREATE INDEX IF NOT EXISTS idx_stop_events_shop_line ON stop_events(shop, line);
             CREATE INDEX IF NOT EXISTS idx_stop_events_shop_line_status ON stop_events(shop, line, status);
             CREATE INDEX IF NOT EXISTS idx_stop_events_severity ON stop_events(severity);
+            CREATE INDEX IF NOT EXISTS idx_stop_events_session_ts ON stop_events(session_id, start_time DESC);
 
             -- buffer_states: queries por buffer_id
             CREATE INDEX IF NOT EXISTS idx_buffer_states_buffer_id ON buffer_states(buffer_id);
             CREATE INDEX IF NOT EXISTS idx_buffer_states_buffer_ts ON buffer_states(buffer_id, timestamp DESC);
+            CREATE INDEX IF NOT EXISTS idx_buffer_states_session_ts ON buffer_states(session_id, timestamp DESC);
+
+            -- plant_snapshots: queries por sessão
+            CREATE INDEX IF NOT EXISTS idx_plant_snapshots_session_ts ON plant_snapshots(session_id, timestamp DESC);
 
             -- oee: queries compostas
             CREATE INDEX IF NOT EXISTS idx_oee_date_shop ON oee(date, shop);
             CREATE INDEX IF NOT EXISTS idx_oee_date_shop_line ON oee(date, shop, line);
+            CREATE INDEX IF NOT EXISTS idx_oee_session_date ON oee(session_id, date);
 
             -- mttr_mtbf: queries compostas
             CREATE INDEX IF NOT EXISTS idx_mttr_mtbf_date_shop ON mttr_mtbf(date, shop);
             CREATE INDEX IF NOT EXISTS idx_mttr_mtbf_shop_line ON mttr_mtbf(shop, line);
             CREATE INDEX IF NOT EXISTS idx_mttr_mtbf_shop_line_station ON mttr_mtbf(shop, line, station);
+            CREATE INDEX IF NOT EXISTS idx_mttr_mtbf_session_date ON mttr_mtbf(session_id, date);
         `);
     }
 }

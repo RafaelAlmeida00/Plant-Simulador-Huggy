@@ -74,6 +74,33 @@ export class CarFactory {
         this._defectiveCount = 0;
         this._completedByLine.clear();
         this._completedByShop.clear();
+        this._completedCarIds.clear();
+    }
+
+    // Track completed car IDs for recovery
+    private _completedCarIds: Set<string> = new Set();
+
+    /**
+     * Check if a car ID has already been marked as completed
+     */
+    public isCarCompleted(carId: string): boolean {
+        return this._completedCarIds.has(carId);
+    }
+
+    /**
+     * Restore completed car IDs for recovery
+     * This is used when recovering a session to know which cars have already finished
+     */
+    public restoreCompletedCarIds(completedIds: Set<string>): void {
+        this._completedCarIds = new Set(completedIds);
+        this._completedCount = completedIds.size;
+    }
+
+    /**
+     * Mark a car as completed (called when car finishes simulation)
+     */
+    public markCarCompleted(carId: string): void {
+        this._completedCarIds.add(carId);
     }
 
     private cachedStartLinesCount: number | null = null;

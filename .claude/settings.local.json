@@ -9,7 +9,9 @@
       "Bash(npm test:*)",
       "Bash(npm uninstall:*)",
       "Skill(code-review:code-review)",
-      "Skill(code-review:code-review:*)"
+      "Skill(code-review:code-review:*)",
+      "Skill(feature-dev:feature-dev)",
+      "Skill(feature-dev:feature-dev:*)"
     ]
   }
 }

@@ -8,3 +8,4 @@ export { PlantSnapshotRepository, IPlantSnapshotRecord } from './PlantSnapshotRe
 export { OEERepository, IOEE } from './OEERepository';
 export { MTTRMTBFRepository, IMTTRMTBF } from './MTTRMTBFRepository';
 export { ConfigPlantRepository, IConfigPlant } from './ConfigPlantRepository';
+export { SessionRepository, ISession, SessionStatus } from './SessionRepository';

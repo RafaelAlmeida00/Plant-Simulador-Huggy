@@ -10,6 +10,17 @@ import { DatabaseFactory } from "../adapters/database/DatabaseFactory";
 import { ServiceLocator } from "../domain/services/ServiceLocator";
 import { getActiveFlowPlant, loadDefaultPlantConfig } from "../domain/factories/plantFactory";
 
+/**
+ * Configuration options for SimulationClock
+ */
+export interface SimulationClockOptions {
+  speedFactor: number;
+  callbacks?: SimulationCallbacks;
+  /** Session ID for session-based mode (Worker Threads) */
+  sessionId?: string;
+  /** ServiceLocator instance for session-based mode. If not provided, uses static ServiceLocator */
+  serviceLocator?: ServiceLocator;
+}
 
 export class SimulationClock implements ISimulationClock {
   private emitter: EventEmitter;
@@ -23,20 +34,64 @@ export class SimulationClock implements ISimulationClock {
   private _pausedAt: number = 0;
   private _totalPausedTime: number = 0;
   private readonly BASE_TICK_INTERVAL_MS = 1000;
-  private readonly START_HOUR = Number(getActiveFlowPlant().shifts?.[0]?.start?.split(":")[0] ?? "7");
-  private readonly START_MINUTE = Number(getActiveFlowPlant().shifts?.[0]?.start?.split(":")[1] ?? "0");
+  private readonly START_HOUR: number;
+  private readonly START_MINUTE: number;
 
-  private static simulatedDays: Set<string> = new Set();
+  // Instance-based simulatedDays (no longer static for session isolation)
+  private simulatedDays: Set<string> = new Set();
+
+  // Session-based mode support
+  private readonly sessionId: string;
+  private readonly serviceLocator: ServiceLocator | null;
 
   private callbacks: SimulationCallbacks;
   private flow: SimulationFlow | null = null;
   private readonly tickEvent: TickEvent = { tickNumber: 0, simulatedTimeMs: 0, simulatedTimestamp: 0, simulatedTimeString: '', realTimeMs: 0, deltaMs: 0, realTimestamp: 0 };
 
-  constructor(speedFactor: number, callbacks: SimulationCallbacks = {}) {
+  /**
+   * Create a new SimulationClock
+   * @param speedFactor - Speed multiplier (legacy constructor signature)
+   * @param callbacks - Simulation callbacks (legacy constructor signature)
+   */
+  constructor(speedFactor: number, callbacks?: SimulationCallbacks);
+  /**
+   * Create a new SimulationClock with options
+   * @param options - Configuration options including session support
+   */
+  constructor(options: SimulationClockOptions);
+  constructor(speedFactorOrOptions: number | SimulationClockOptions, callbacks: SimulationCallbacks = {}) {
+    // Parse constructor arguments (support both legacy and new signatures)
+    let speedFactor: number;
+    let sessionId: string;
+    let serviceLocator: ServiceLocator | null;
+    let callbacksToUse: SimulationCallbacks;
+
+    if (typeof speedFactorOrOptions === 'number') {
+      // Legacy signature: constructor(speedFactor, callbacks)
+      speedFactor = speedFactorOrOptions;
+      sessionId = 'default';
+      serviceLocator = null;
+      callbacksToUse = callbacks;
+    } else {
+      // New signature: constructor(options)
+      speedFactor = speedFactorOrOptions.speedFactor;
+      sessionId = speedFactorOrOptions.sessionId ?? 'default';
+      serviceLocator = speedFactorOrOptions.serviceLocator ?? null;
+      callbacksToUse = speedFactorOrOptions.callbacks ?? {};
+    }
+
     this.emitter = new EventEmitter();
     this.emitter.setMaxListeners(100);
     this._speedFactor = speedFactor;
-    this.callbacks = callbacks;
+    this.sessionId = sessionId;
+    this.serviceLocator = serviceLocator;
+    this.callbacks = callbacksToUse;
+
+    // Get shift start time from active plant config
+    const flowPlant = getActiveFlowPlant();
+    this.START_HOUR = Number(flowPlant.shifts?.[0]?.start?.split(":")[0] ?? "7");
+    this.START_MINUTE = Number(flowPlant.shifts?.[0]?.start?.split(":")[1] ?? "0");
+
     const now = new Date();
     this._simulatedTimestamp = Date.UTC(
       now.getUTCFullYear(),
@@ -48,6 +103,52 @@ export class SimulationClock implements ISimulationClock {
       0
     );
     this.setupClockListeners();
+  }
+
+  /**
+   * Get the session ID for this clock instance
+   */
+  public getSessionId(): string {
+    return this.sessionId;
+  }
+
+  /**
+   * Helper to get services - uses instance ServiceLocator if available, otherwise static
+   */
+  private getServices() {
+    if (this.serviceLocator) {
+      return {
+        oeeService: this.serviceLocator.getOEEServiceInstance(),
+        mttrmtbfService: this.serviceLocator.getMTTRMTBFServiceInstance(),
+        carService: this.serviceLocator.getCarServiceInstance(),
+        stopService: this.serviceLocator.getStopLineServiceInstance(),
+        plantService: this.serviceLocator.getPlantServiceInstance(),
+        bufferService: this.serviceLocator.getBufferServiceInstance(),
+      };
+    }
+    return {
+      oeeService: ServiceLocator.getOEEService(),
+      mttrmtbfService: ServiceLocator.getMTTRMTBFService(),
+      carService: ServiceLocator.getCarService(),
+      stopService: ServiceLocator.getStopLineService(),
+      plantService: ServiceLocator.getPlantService(),
+      bufferService: ServiceLocator.getBufferService(),
+    };
+  }
+
+  /**
+   * Helper to check if ServiceLocator is initialized
+   */
+  private async ensureServiceLocatorInitialized(): Promise<void> {
+    if (this.serviceLocator) {
+      if (!this.serviceLocator.isInstanceInitialized()) {
+        await this.serviceLocator.initializeInstance();
+      }
+    } else {
+      if (!ServiceLocator.isInitialized()) {
+        await ServiceLocator.initialize();
+      }
+    }
   }
 
   private createInitialTimestamp(): number {
@@ -62,12 +163,12 @@ export class SimulationClock implements ISimulationClock {
     };
 
     let dayKey = formatUtcDayKey(candidateDate);
-    while (SimulationClock.simulatedDays.has(dayKey)) {
+    while (this.simulatedDays.has(dayKey)) {
       candidateDate.setUTCDate(candidateDate.getUTCDate() + 1);
       dayKey = formatUtcDayKey(candidateDate);
     }
 
-    SimulationClock.simulatedDays.add(dayKey);
+    this.simulatedDays.add(dayKey);
 
     return Date.UTC(
       candidateDate.getUTCFullYear(),
@@ -136,17 +237,18 @@ export class SimulationClock implements ISimulationClock {
     if (this._state === "running") return;
 
     // Ensure ServiceLocator is initialized
-    await ServiceLocator.initialize();
+    await this.ensureServiceLocatorInitialized();
 
     await this.resetMemoryState();
 
+    const services = this.getServices();
     this.flow = new SimulationFlow({
-      oeeService: ServiceLocator.getOEEService(),
-      mttrmtbfService: ServiceLocator.getMTTRMTBFService(),
-      carService: ServiceLocator.getCarService(),
-      stopService: ServiceLocator.getStopLineService(),
-      plantService: ServiceLocator.getPlantService(),
-      bufferService: ServiceLocator.getBufferService(),
+      oeeService: services.oeeService,
+      mttrmtbfService: services.mttrmtbfService,
+      carService: services.carService,
+      stopService: services.stopService,
+      plantService: services.plantService,
+      bufferService: services.bufferService,
       event: this.tickEvent,
       callbacks: this.callbacks
     });
@@ -190,7 +292,7 @@ export class SimulationClock implements ISimulationClock {
 
   public async restart(): Promise<void> {
 
-    SimulationClock.simulatedDays.delete(this.getSimulatedDateString());
+    this.simulatedDays.delete(this.getSimulatedDateString());
     this.stopInterval();
 
     this._currentTick = 0;
@@ -202,13 +304,14 @@ export class SimulationClock implements ISimulationClock {
 
     await this.resetMemoryState();
 
+    const services = this.getServices();
     this.flow = new SimulationFlow({
-      oeeService: ServiceLocator.getOEEService(),
-      mttrmtbfService: ServiceLocator.getMTTRMTBFService(),
-      carService: ServiceLocator.getCarService(),
-      stopService: ServiceLocator.getStopLineService(),
-      plantService: ServiceLocator.getPlantService(),
-      bufferService: ServiceLocator.getBufferService(),
+      oeeService: services.oeeService,
+      mttrmtbfService: services.mttrmtbfService,
+      carService: services.carService,
+      stopService: services.stopService,
+      plantService: services.plantService,
+      bufferService: services.bufferService,
       event: this.tickEvent,
       callbacks: this.callbacks
     });
@@ -218,27 +321,41 @@ export class SimulationClock implements ISimulationClock {
     this.setState("running");
   }
 
+  /**
+   * Set initial state for recovery
+   * This allows restoring the clock to a specific point in time
+   */
+  public setInitialState(simulatedTimestamp: number, currentTick: number): void {
+    this._simulatedTimestamp = simulatedTimestamp;
+    this._currentTick = currentTick;
+    this._currentSimulatedTime = currentTick * this._speedFactor * 1000;
+
+    // Update the tick event with restored values
+    this.tickEvent.tickNumber = currentTick;
+    this.tickEvent.simulatedTimestamp = simulatedTimestamp;
+    this.tickEvent.simulatedTimeMs = this._currentSimulatedTime;
+    this.tickEvent.simulatedTimeString = this.getSimulatedTimeString();
+
+    logger().info(`[SimulationClock] Initial state set: tick=${currentTick}, timestamp=${simulatedTimestamp}`);
+  }
+
   private async resetMemoryState(): Promise<void> {
-    if (!ServiceLocator.isInitialized()) {
-      await ServiceLocator.initialize();
-    }
+    await this.ensureServiceLocatorInitialized();
 
     await DatabaseFactory.getDatabase();
 
     await loadDefaultPlantConfig();
-
-    const finalTick = this._currentTick;
-    const finalTime = this._currentSimulatedTime;
 
     this._currentTick = 0;
     this._currentSimulatedTime = 0;
     this._pausedAt = 0;
     this._totalPausedTime = 0;
 
-    ServiceLocator.getBufferService().resetBuffers();
-    ServiceLocator.getStopLineService().resetAndStart();
-    ServiceLocator.getPlantService().resetFactory();
-    ServiceLocator.getCarService().cleanCarsCompleted();
+    const services = this.getServices();
+    services.bufferService.resetBuffers();
+    services.stopService.resetAndStart();
+    services.plantService.resetFactory();
+    services.carService.cleanCarsCompleted();
 
     this._simulatedTimestamp = this.createInitialTimestamp();
     this._startRealTime = Date.now();
@@ -333,11 +450,11 @@ export class SimulationClock implements ISimulationClock {
 
 
   public getBuffers(): Map<string, IBuffer> {
-    return ServiceLocator.getBufferService().getBuffers();
+    return this.getServices().bufferService.getBuffers();
   }
 
   public getCars(): Map<string, ICar> {
-    const carService = ServiceLocator.getCarService();
+    const carService = this.getServices().carService;
     const cars = carService.getAllCars();
     const parts = carService.getAllParts();
     const carsAndParts = new Map<string, ICar>([...cars, ...parts]);
@@ -345,11 +462,11 @@ export class SimulationClock implements ISimulationClock {
   }
 
   public getStops(): Map<string, IStopLine> {
-    return ServiceLocator.getStopLineService().getStops();
+    return this.getServices().stopService.getStops();
   }
 
   public getPlantSnapshot() {
-    return ServiceLocator.getPlantService().getPlantSnapshot();
+    return this.getServices().plantService.getPlantSnapshot();
   }
 
   private processTick(event: TickEvent): void {

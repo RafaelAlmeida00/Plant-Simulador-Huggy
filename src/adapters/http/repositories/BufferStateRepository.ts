@@ -4,6 +4,7 @@ import { BaseRepository } from './BaseRepository';
 
 export interface IBufferState {
     id?: number;
+    session_id?: string;
     buffer_id: string;
     from_location: string;
     to_location: string;
@@ -50,16 +51,17 @@ export class BufferStateRepository extends BaseRepository<IBufferState> {
 
     public async create(entity: Partial<IBufferState>): Promise<IBufferState> {
         const db = await this.getDb();
-        
+
         const sql = `
-            INSERT INTO ${this.tableName} 
-            (buffer_id, from_location, to_location, capacity, current_count, status, type, car_ids, timestamp)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO ${this.tableName}
+            (session_id, buffer_id, from_location, to_location, capacity, current_count, status, type, car_ids, timestamp)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ${this.getReturningClause(db)}
         `;
-        
+
         const carIdsJson = entity.car_ids ? JSON.stringify(entity.car_ids) : null;
         const params = [
+            entity.session_id ?? null,
             entity.buffer_id,
             entity.from_location,
             entity.to_location,
@@ -72,11 +74,11 @@ export class BufferStateRepository extends BaseRepository<IBufferState> {
         ];
 
         const result = await db.query<IBufferState>(this.convertPlaceholders(db, sql), params);
-        
+
         if (result.rows.length > 0) {
             return this.normalize(result.rows[0]);
         }
-        
+
         const lastId = await db.query<{ id: number }>('SELECT last_insert_rowid() as id');
         return this.normalize({ ...(entity as any), id: lastId.rows[0]?.id } as IBufferState);
     }
