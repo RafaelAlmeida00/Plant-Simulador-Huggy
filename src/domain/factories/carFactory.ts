@@ -68,6 +68,12 @@ export class CarFactory {
                 this.parts.delete(carId);
             }
         }
+
+        // Reset completion counters for the new day/shift
+        this._completedCount = 0;
+        this._defectiveCount = 0;
+        this._completedByLine.clear();
+        this._completedByShop.clear();
     }
 
     private cachedStartLinesCount: number | null = null;

@@ -148,17 +148,8 @@ export class CarService {
             enter: timeTs
         });
 
-        if (currentStation.isFirstStation) {
-            car.shopLeadtimes.push({
-                shop: nextStation.shop,
-                enteredAt: timeTs,
-            });
-            car.shopLeadtimes.push({
-                shop: nextStation.shop,
-                line: nextStation.line,
-                enteredAt: timeTs,
-            });
-        }
+        // Note: shopLeadtimes are created in moverCarToFirstStation when car enters the line
+        // No need to duplicate here when moving from first station to next
 
         this.plantService.removeCarFromStation(currentStationId);
         this.plantService.addCarToStation(nextStationId, car);

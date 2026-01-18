@@ -81,19 +81,23 @@ export class OEEFactory {
         const shop: IShop = input.shop as IShop;
         const totalCarsProduction = this.carsService.getCompletedCardByShopCount(shop);
 
-        // Para shop com linhas paralelas: dividir carsProduction pelo número de linhas
-        // para obter média por linha, já que productionTime é a MÉDIA das linhas
-        const carsProduction = totalCarsProduction;
+        // Get number of parallel lines in this shop
+        const shopLines = this.plantService.getLinesOfShop(shop.name);
+        const numLines = shopLines.length || 1;
 
         const productionTime = input.productionTimeMinutes;
         const taktTime = input.taktTimeMinutes;
 
-        // diffTime = productionTime - (taktTime * carsProduction)
-        const diffTime = productionTime - (taktTime * carsProduction);
+        // For parallel lines: total capacity = productionTime × numLines
+        // This represents the combined capacity of all parallel lines
+        const effectiveProductionTime = productionTime * numLines;
 
-        // OEE = ((taktTime * carsProduction) / productionTime) * 100
-        const oee = productionTime > 0
-            ? ((taktTime * carsProduction) / productionTime) * 100
+        // diffTime = effectiveProductionTime - (taktTime * carsProduction)
+        const diffTime = effectiveProductionTime - (taktTime * totalCarsProduction);
+
+        // OEE = ((taktTime * carsProduction) / effectiveProductionTime) * 100
+        const oee = effectiveProductionTime > 0
+            ? ((taktTime * totalCarsProduction) / effectiveProductionTime) * 100
             : 0;
 
         let jph;
@@ -107,8 +111,8 @@ export class OEEFactory {
             date: dateStr,
             shop: input.shop,
             line: input.line,
-            productionTime,
-            carsProduction: totalCarsProduction,  // Retornar total para referência, mas OEE usa média
+            productionTime: effectiveProductionTime,  // Return effective (combined) production time
+            carsProduction: totalCarsProduction,
             taktTime,
             diffTime,
             oee: Math.round(oee * 100) / 100,  // Arredonda para 2 casas decimais

@@ -795,4 +795,40 @@ DB_TYPE=sqlite npm run dev
 
 * If you are a IA or is a IA Claude Model by Anthropic, update this file always that you make a edit and get new informations about the project, change the architeture, logic and rules of the simulator. Read and do the command on file TIMELINE.md. Also, update the data change below:
 
-*Last updated: 2026-01-15 12:00:00*
+*Last updated: 2026-01-17 15:30:00*
+
+---
+
+## Recent Changes (2026-01-17)
+
+### OEE Calculation Fixes
+
+**Issue 1: Line OEE used theoretical takt instead of bottleneck**
+- **Problem**: OEE calculation used `line.taktMn` (theoretical line takt), but actual throughput is determined by the bottleneck station (slowest station with highest takt)
+- **Root Cause**: In `plantFactory.ts`, stations get random fractions (0.7-0.999) of line takt, so bottleneck station determines actual capacity
+- **Fix Location**: [SimulationFlow.ts:1041-1045](src/app/SimulationFlow.ts#L1041-L1045)
+- **Solution**: Calculate bottleneck takt as `Math.max(...line.stations.map(s => s.taktMn + s.taktSg / 60))`
+
+**Issue 2: Shop OEE didn't account for parallel lines**
+- **Problem**: For shops with multiple parallel lines, `carsProduction` was SUM of all lines but `productionTime` was AVERAGE (single line capacity), causing OEE > 100%
+- **Fix Location**: [OEEFactory.ts:84-101](src/domain/factories/OEEFactory.ts#L84-L101)
+- **Solution**: Calculate `effectiveProductionTime = productionTime × numLines` to represent combined capacity of parallel lines
+
+**Issue 3: Duplicate shopLeadtimes entries**
+- **Problem**: `moveCarToNextStation` duplicated shopLeadtimes that were already created in `moverCarToFirstStation`
+- **Fix Location**: [CarService.ts:151-152](src/domain/services/CarService.ts#L151-L152)
+- **Solution**: Removed duplicate logic; shopLeadtimes are only created when car enters the first station
+
+### OEE Formula Reference
+
+```typescript
+// For LINE OEE:
+bottleneckTaktMn = Math.max(...line.stations.map(s => s.taktMn + s.taktSg / 60))
+diffTime = productionTime - (bottleneckTaktMn * carsProduction)
+oee = ((bottleneckTaktMn * carsProduction) / productionTime) * 100
+
+// For SHOP OEE (parallel lines):
+effectiveProductionTime = productionTime * numLines
+diffTime = effectiveProductionTime - (taktTime * carsProduction)
+oee = ((taktTime * carsProduction) / effectiveProductionTime) * 100
+```

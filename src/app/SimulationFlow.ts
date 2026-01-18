@@ -1038,11 +1038,17 @@ export class SimulationFlow {
             shopData.count += 1;
             productionTimeByShop.set(line.shop, shopData);
 
+            // Use bottleneck takt (slowest station) for accurate OEE calculation
+            // The bottleneck determines actual throughput, not theoretical line takt
+            const bottleneckTaktMn = line.stations.length > 0
+                ? Math.max(...line.stations.map(s => s.taktMn + s.taktSg / 60))
+                : line.taktMn;
+
             const lineInput: OEECalculationInput = {
                 shop: shop,
                 line: line,
                 productionTimeMinutes: productionTimeMinutes,
-                taktTimeMinutes: line.taktMn,
+                taktTimeMinutes: bottleneckTaktMn,
                 simulatedTimestamp: this.event.simulatedTimestamp,
                 shiftStart: line.takt.shiftStart,
                 shiftEnd: line.takt.shiftEnd,
@@ -1063,13 +1069,17 @@ export class SimulationFlow {
             const shopData = productionTimeByShop.get(shop.name);
             const avgProductionTime = shopData ? shopData.total / shopData.count : 0;
 
-            let totalTaktMn = 0;
+            // Use bottleneck takt (slowest station) for each line, then average
+            let totalBottleneckTaktMn = 0;
             let firstLine: ILine | null = null;
             for (const line of shopLines) {
-                totalTaktMn += line.taktMn;
+                const bottleneckTaktMn = line.stations.length > 0
+                    ? Math.max(...line.stations.map(s => s.taktMn + s.taktSg / 60))
+                    : line.taktMn;
+                totalBottleneckTaktMn += bottleneckTaktMn;
                 if (!firstLine) firstLine = line;
             }
-            const avgTaktMn = totalTaktMn / shopLines.length;
+            const avgTaktMn = totalBottleneckTaktMn / shopLines.length;
 
             const shopInput: OEECalculationInput = {
                 shop: shop,
