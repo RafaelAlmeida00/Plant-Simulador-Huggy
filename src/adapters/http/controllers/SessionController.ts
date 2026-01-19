@@ -2,6 +2,7 @@
 
 import { Request, Response } from 'express';
 import { SessionManager, CreateSessionOptions } from '../../../sessions/SessionManager';
+import { logger } from '../../../utils/logger';
 
 /**
  * SessionController handles HTTP endpoints for session management.
@@ -274,6 +275,8 @@ export class SessionController {
         try {
             const userId = this.getUserId(req);
             const id = this.getSessionId(req);
+
+            logger().info(`Attempting to recover session ${id} for user ${userId}`);
 
             const session = await this.sessionManager.recoverSession(id, userId);
 
