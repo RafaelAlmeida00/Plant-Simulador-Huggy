@@ -4,6 +4,7 @@ import { BaseRepository } from './BaseRepository';
 
 export interface IMTTRMTBF {
     id?: number;
+    session_id?: string;
     date: string;
     shop: string;
     line: string;
@@ -19,20 +20,21 @@ export class MTTRMTBFRepository extends BaseRepository<IMTTRMTBF> {
     protected timestampColumn = 'created_at';
 
     protected allowedFilterColumns(): readonly string[] {
-        return ['id', 'date', 'shop', 'line', 'station', 'mttr', 'mtbf', 'created_at'] as const;
+        return ['id', 'session_id', 'date', 'shop', 'line', 'station', 'mttr', 'mtbf', 'created_at'] as const;
     }
 
     public async create(entity: Partial<IMTTRMTBF>): Promise<IMTTRMTBF> {
         const db = await this.getDb();
-        
+
         const sql = `
-            INSERT INTO ${this.tableName} 
-            (date, shop, line, station, mttr, mtbf)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO ${this.tableName}
+            (session_id, date, shop, line, station, mttr, mtbf)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ${this.getReturningClause(db)}
         `;
-        
+
         const params = [
+            entity.session_id ?? null,
             entity.date,
             entity.shop,
             entity.line,
@@ -150,6 +152,21 @@ export class MTTRMTBFRepository extends BaseRepository<IMTTRMTBF> {
         if (limit !== undefined && limit > 0) {
             const safeLimit = Math.min(limit, 10000);
             sql += ` LIMIT $4`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IMTTRMTBF>(this.convertPlaceholders(db, sql), params);
+        return result.rows;
+    }
+
+    public async findBySessionId(sessionId: string, limit?: number): Promise<IMTTRMTBF[]> {
+        const db = await this.getDb();
+        let sql = `SELECT * FROM ${this.tableName} WHERE session_id = $1 ORDER BY date DESC, shop, line, station`;
+        const params: any[] = [sessionId];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
             params.push(safeLimit);
         }
 

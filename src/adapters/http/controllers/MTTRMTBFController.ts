@@ -15,57 +15,85 @@ export class MTTRMTBFController {
         try {
             const { date, shop, line, station, start_time, end_time } = req.query;
 
+            // Helper to apply session filter to results
+            const applySessionFilter = (records: IMTTRMTBF[]): IMTTRMTBF[] => {
+                if (req.validatedSessionId) {
+                    return records.filter(r => r.session_id === req.validatedSessionId);
+                }
+                return records;
+            };
+
             // Filtro por range de tempo
             if (start_time && end_time) {
-                const result = await this.repository.findByTimeRange(
-                    parseInt(start_time as string, 10),
-                    parseInt(end_time as string, 10)
-                );
-                res.json({ success: true, data: result.data, count: result.data.length, truncated: result.truncated });
+                // For time range queries, use session-specific query if available
+                if (req.validatedSessionId) {
+                    const result = await this.repository.findBySessionId(req.validatedSessionId);
+                    const filtered = result.filter(r =>
+                        (r.created_at ?? 0) >= parseInt(start_time as string, 10) &&
+                        (r.created_at ?? 0) <= parseInt(end_time as string, 10)
+                    );
+                    res.json({ success: true, data: filtered, count: filtered.length, truncated: false });
+                } else {
+                    const result = await this.repository.findByTimeRange(
+                        parseInt(start_time as string, 10),
+                        parseInt(end_time as string, 10)
+                    );
+                    res.json({ success: true, data: result.data, count: result.data.length, truncated: result.truncated });
+                }
                 return;
             }
 
             // Filtro por station específica
             if (shop && line && station) {
-                const records = await this.repository.findByStation(
-                    shop as string, 
-                    line as string, 
+                let records = await this.repository.findByStation(
+                    shop as string,
+                    line as string,
                     station as string
                 );
+                records = applySessionFilter(records);
                 res.json({ success: true, data: records, count: records.length });
                 return;
             }
 
             // Filtro por linha
             if (shop && line) {
-                const records = await this.repository.findByLine(shop as string, line as string);
+                let records = await this.repository.findByLine(shop as string, line as string);
+                records = applySessionFilter(records);
                 res.json({ success: true, data: records, count: records.length });
                 return;
             }
 
             // Filtro por data e shop
             if (date && shop) {
-                const records = await this.repository.findByDateAndShop(date as string, shop as string);
+                let records = await this.repository.findByDateAndShop(date as string, shop as string);
+                records = applySessionFilter(records);
                 res.json({ success: true, data: records, count: records.length });
                 return;
             }
 
             // Filtro por data
             if (date) {
-                const records = await this.repository.findByDate(date as string);
+                let records = await this.repository.findByDate(date as string);
+                records = applySessionFilter(records);
                 res.json({ success: true, data: records, count: records.length });
                 return;
             }
 
             // Filtro por shop
             if (shop) {
-                const records = await this.repository.findByShop(shop as string);
+                let records = await this.repository.findByShop(shop as string);
+                records = applySessionFilter(records);
                 res.json({ success: true, data: records, count: records.length });
                 return;
             }
 
-            // Sem filtros - retorna todos
-            const records = await this.repository.findAll();
+            // Sem filtros específicos - use session filter if available
+            let records: IMTTRMTBF[];
+            if (req.validatedSessionId) {
+                records = await this.repository.findBySessionId(req.validatedSessionId);
+            } else {
+                records = await this.repository.findAll();
+            }
             res.json({ success: true, data: records, count: records.length });
         } catch (error: any) {
             res.status(500).json({ success: false, error: error.message });

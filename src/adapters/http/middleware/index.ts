@@ -3,3 +3,4 @@
 export { authMiddleware, DecodedToken, AuthenticatedUser } from './auth';
 export { setupSocketAuth, setupOptionalSocketAuth } from './socketAuth';
 export { csrfMiddleware, optionalCsrfMiddleware, clearCsrfCache } from './csrf';
+export { sessionFilterMiddleware, optionalSessionFilterMiddleware } from './sessionFilter';

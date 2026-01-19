@@ -17,20 +17,36 @@ export class EventsController {
             const { car_id, shop, line, station, event_type, start_time, end_time } = req.query;
             const pagination = parsePaginationParams(req.query);
 
+            // Build filters object for paginated query
+            const filters: Record<string, any> = {};
+
+            // Session filtering - if validatedSessionId is present, filter by it
+            if (req.validatedSessionId) {
+                filters.session_id = req.validatedSessionId;
+            }
+
             // Filtro por range de tempo (with pagination)
             if (start_time && end_time) {
-                const result = await this.repository.findByTimeRange(
-                    parseInt(start_time as string, 10),
-                    parseInt(end_time as string, 10)
-                );
-                // Apply in-memory pagination to time range results
-                const paginatedData = paginateArray(result.data, pagination);
-                res.json(createPaginatedResponse(paginatedData, pagination, result.data.length));
+                // For time range queries, we need session-aware filtering
+                if (req.validatedSessionId) {
+                    const result = await this.repository.findBySessionId(req.validatedSessionId);
+                    const filtered = result.filter(e =>
+                        e.timestamp >= parseInt(start_time as string, 10) &&
+                        e.timestamp <= parseInt(end_time as string, 10)
+                    );
+                    const paginatedData = paginateArray(filtered, pagination);
+                    res.json(createPaginatedResponse(paginatedData, pagination, filtered.length));
+                } else {
+                    const result = await this.repository.findByTimeRange(
+                        parseInt(start_time as string, 10),
+                        parseInt(end_time as string, 10)
+                    );
+                    const paginatedData = paginateArray(result.data, pagination);
+                    res.json(createPaginatedResponse(paginatedData, pagination, result.data.length));
+                }
                 return;
             }
 
-            // Build filters object for paginated query
-            const filters: Record<string, any> = {};
             if (car_id) filters.car_id = car_id;
             if (shop) filters.shop = shop;
             if (line) filters.line = line;

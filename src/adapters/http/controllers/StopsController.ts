@@ -17,27 +17,48 @@ export class StopsController {
             const { stop_id, shop, line, station, severity, status, type, start_time, end_time } = req.query;
             const pagination = parsePaginationParams(req.query);
 
+            // Build filters object for paginated query
+            const filters: Record<string, any> = {};
+
+            // Session filtering - if validatedSessionId is present, filter by it
+            if (req.validatedSessionId) {
+                filters.session_id = req.validatedSessionId;
+            }
+
             // Filtro por range de tempo (with pagination)
             if (start_time && end_time) {
-                const result = await this.repository.findByTimeRange(
-                    parseInt(start_time as string, 10),
-                    parseInt(end_time as string, 10)
-                );
-                // Apply in-memory pagination to time range results
-                const paginatedData = paginateArray(result.data, pagination);
-                res.json(createPaginatedResponse(paginatedData, pagination, result.data.length));
+                // For time range queries, we need session-aware filtering
+                if (req.validatedSessionId) {
+                    const result = await this.repository.findBySessionId(req.validatedSessionId);
+                    const filtered = result.filter(e =>
+                        e.start_time >= parseInt(start_time as string, 10) &&
+                        e.start_time <= parseInt(end_time as string, 10)
+                    );
+                    const paginatedData = paginateArray(filtered, pagination);
+                    res.json(createPaginatedResponse(paginatedData, pagination, filtered.length));
+                } else {
+                    const result = await this.repository.findByTimeRange(
+                        parseInt(start_time as string, 10),
+                        parseInt(end_time as string, 10)
+                    );
+                    const paginatedData = paginateArray(result.data, pagination);
+                    res.json(createPaginatedResponse(paginatedData, pagination, result.data.length));
+                }
                 return;
             }
 
             // Filtro por stop_id específico (retorna single result, no pagination needed)
             if (stop_id) {
                 const stop = await this.repository.findByStopId(stop_id as string);
+                // If session filter is active, validate the stop belongs to the session
+                if (stop && req.validatedSessionId && stop.session_id !== req.validatedSessionId) {
+                    res.json(createPaginatedResponse([], pagination, 0));
+                    return;
+                }
                 res.json(createPaginatedResponse(stop ? [stop] : [], pagination, stop ? 1 : 0));
                 return;
             }
 
-            // Build filters object for paginated query
-            const filters: Record<string, any> = {};
             if (shop) filters.shop = shop;
             if (line) filters.line = line;
             if (station) filters.station = station;
@@ -60,10 +81,17 @@ export class StopsController {
     public async getActive(req: Request, res: Response): Promise<void> {
         try {
             const pagination = parsePaginationParams(req.query);
+
+            // Build filters with session isolation
+            const filters: Record<string, any> = { status: 'IN_PROGRESS' };
+            if (req.validatedSessionId) {
+                filters.session_id = req.validatedSessionId;
+            }
+
             // Use paginated query with status filter
             const result = await this.repository.findAllPaginated(
                 pagination,
-                { status: 'IN_PROGRESS' }
+                filters
             );
             res.json(formatPaginatedResponse(result));
         } catch (error: any) {

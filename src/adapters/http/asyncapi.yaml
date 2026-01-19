@@ -1,13 +1,24 @@
 asyncapi: 3.0.0
 info:
   title: Plant Simulador WebSocket API
-  version: 1.1.0
+  version: 1.2.0
   description: >
     API de comunicação em tempo real via WebSocket (socket.io) para o
     Plant-Simulador.
 
     Permite o front end receber atualizações instantâneas de eventos, estados,
     notificações e enviar comandos de simulação.
+
+
+    ## Session Isolation
+
+    - **Multi-session Support**: Cada simulação roda em um Worker Thread isolado
+
+    - **Session Ownership Validation**: Ao se inscrever em uma sessão, o servidor valida se o usuário autenticado é proprietário
+
+    - **Subscribe Events**: Use `subscribe:session` com `{sessionId, channel}` para se inscrever em eventos de uma sessão específica
+
+    - **Error Handling**: Se a sessão não existir ou não pertencer ao usuário, um evento `error` será emitido
 
 
     ## Performance Features
@@ -72,7 +83,25 @@ channels:
     messages:
       subscribe.message:
         $ref: '#/components/messages/SessionEvent'
-    description: Eventos de sessão específica (state changes, recovery, errors)
+    description: |
+      Eventos de sessão específica (state changes, recovery, errors).
+
+      ## Subscription Protocol
+      Para se inscrever, emita o evento `subscribe:session` com payload:
+      ```json
+      { "sessionId": "uuid-da-sessao", "channel": "session" }
+      ```
+
+      ## Ownership Validation
+      - Se o usuário estiver autenticado, o servidor valida que ele é proprietário da sessão
+      - Se a sessão não existir ou não pertencer ao usuário, um evento `error` será emitido:
+        ```json
+        { "message": "Session not found or access denied" }
+        ```
+      - Usuários anônimos podem se inscrever (útil para desenvolvimento/testes)
+
+      ## Unsubscription
+      Para cancelar a inscrição, emita `unsubscribe:session` com o mesmo payload.
 operations:
   plantUpdate.subscribe:
     action: send
@@ -123,6 +152,16 @@ operations:
     summary: 'Enviar comandos de simulação (ex: start, pause, reset)'
     messages:
       - $ref: '#/channels/command/messages/publish.message'
+  sessionEvent.subscribe:
+    action: send
+    channel:
+      $ref: '#/channels/sessionEvent'
+    summary: |
+      Receber eventos de uma sessão específica.
+      Requer subscription via evento subscribe:session com sessionId e channel.
+      A subscrição é validada contra o usuário autenticado.
+    messages:
+      - $ref: '#/channels/sessionEvent/messages/subscribe.message'
 components:
   messages:
     PlantUpdate:

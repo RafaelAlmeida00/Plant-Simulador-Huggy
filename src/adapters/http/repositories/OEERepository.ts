@@ -4,6 +4,7 @@ import { BaseRepository } from './BaseRepository';
 
 export interface IOEE {
     id?: number;
+    session_id?: string;
     date: string;
     shop: string;
     line: string;
@@ -21,20 +22,21 @@ export class OEERepository extends BaseRepository<IOEE> {
     protected timestampColumn = 'created_at';
 
     protected allowedFilterColumns(): readonly string[] {
-        return ['id', 'date', 'shop', 'line', 'production_time', 'cars_production', 'takt_time', 'diff_time', 'oee', 'created_at'] as const;
+        return ['id', 'session_id', 'date', 'shop', 'line', 'production_time', 'cars_production', 'takt_time', 'diff_time', 'oee', 'created_at'] as const;
     }
 
     public async create(entity: Partial<IOEE>): Promise<IOEE> {
         const db = await this.getDb();
-        
+
         const sql = `
-            INSERT INTO ${this.tableName} 
-            (date, shop, line, production_time, cars_production, takt_time, diff_time, oee)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO ${this.tableName}
+            (session_id, date, shop, line, production_time, cars_production, takt_time, diff_time, oee)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             ${this.getReturningClause(db)}
         `;
-        
+
         const params = [
+            entity.session_id ?? null,
             entity.date,
             entity.shop,
             entity.line,
@@ -136,5 +138,20 @@ export class OEERepository extends BaseRepository<IOEE> {
         const sql = `SELECT * FROM ${this.tableName} WHERE date = $1 AND shop = $2 AND line = $3`;
         const result = await db.query<IOEE>(this.convertPlaceholders(db, sql), [date, shop, line]);
         return result.rows[0] || null;
+    }
+
+    public async findBySessionId(sessionId: string, limit?: number): Promise<IOEE[]> {
+        const db = await this.getDb();
+        let sql = `SELECT * FROM ${this.tableName} WHERE session_id = $1 ORDER BY date DESC, shop, line`;
+        const params: any[] = [sessionId];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IOEE>(this.convertPlaceholders(db, sql), params);
+        return result.rows;
     }
 }

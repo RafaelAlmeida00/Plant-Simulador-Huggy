@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: Plant Simulador API
-  version: 1.1.0
+  version: 1.2.0
   description: |
     API para simulação e monitoramento de uma planta industrial, incluindo eventos, buffers, paradas, snapshots e saúde do sistema.
 
@@ -9,13 +9,25 @@ info:
     - **HTTP Compression**: gzip (level 6, threshold 1KB)
     - **Rate Limiting**: 100 req/min (global), 30 req/min (writes), 300 req/min (health)
     - **Pagination**: All list endpoints support `page` and `limit` parameters (max 100 records per page)
+
+    ## Session Isolation
+    - **Multi-session Support**: Each simulation runs in an isolated Worker Thread
+    - **Session Filtering**: All data endpoints support optional `session_id` query parameter
+    - **Ownership Validation**: When `session_id` is provided, the API validates that the authenticated user owns the session
+    - **Data Isolation**: When filtered by session_id, only data belonging to that session is returned
 servers:
   - url: http://localhost:3000
 paths:
   /api/events:
     get:
       summary: Lista todos os eventos
+      description: |
+        Retorna eventos de carros com suporte a filtros e paginação.
+        Quando `session_id` é fornecido, retorna apenas eventos da sessão especificada (requer que o usuário seja proprietário da sessão).
+      tags:
+        - Events
       parameters:
+        - $ref: '#/components/parameters/SessionIdFilter'
         - in: query
           name: page
           schema:
@@ -68,6 +80,8 @@ paths:
                 $ref: '#/components/schemas/PaginatedResponse'
     post:
       summary: Cria um novo evento
+      tags:
+        - Events
       requestBody:
         required: true
         content:
@@ -80,6 +94,8 @@ paths:
   /api/events/{id}:
     get:
       summary: Busca evento por ID
+      tags:
+        - Events
       parameters:
         - in: path
           name: id
@@ -93,6 +109,8 @@ paths:
           description: Evento não encontrado
     put:
       summary: Atualiza evento por ID
+      tags:
+        - Events
       parameters:
         - in: path
           name: id
@@ -112,6 +130,8 @@ paths:
           description: Evento não encontrado
     delete:
       summary: Remove evento por ID
+      tags:
+        - Events
       parameters:
         - in: path
           name: id
@@ -126,7 +146,13 @@ paths:
   /api/stops:
     get:
       summary: Lista todas as paradas
+      description: |
+        Retorna paradas (stops) com suporte a filtros e paginação.
+        Quando `session_id` é fornecido, retorna apenas paradas da sessão especificada.
+      tags:
+        - Stops
       parameters:
+        - $ref: '#/components/parameters/SessionIdFilter'
         - in: query
           name: page
           schema:
@@ -185,8 +211,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedResponse'
+        '403':
+          description: Acesso negado à sessão especificada
     post:
       summary: Cria uma nova parada
+      tags:
+        - Stops
       requestBody:
         required: true
         content:
@@ -196,9 +226,40 @@ paths:
       responses:
         '201':
           description: Parada criada
+
+  /api/stops/active:
+    get:
+      summary: Lista paradas ativas (IN_PROGRESS)
+      description: |
+        Retorna apenas paradas com status IN_PROGRESS.
+        Quando `session_id` é fornecido, retorna apenas paradas ativas da sessão especificada.
+      tags:
+        - Stops
+      parameters:
+        - $ref: '#/components/parameters/SessionIdFilter'
+      responses:
+        '200':
+          description: Lista de paradas ativas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StopEvent'
+                  count:
+                    type: integer
+        '403':
+          description: Acesso negado à sessão especificada
   /api/stops/{id}:
     get:
       summary: Busca parada por ID
+      tags:
+        - Stops
       parameters:
         - in: path
           name: id
@@ -212,6 +273,8 @@ paths:
           description: Parada não encontrada
     put:
       summary: Atualiza parada por ID
+      tags:
+        - Stops
       parameters:
         - in: path
           name: id
@@ -231,6 +294,8 @@ paths:
           description: Parada não encontrada
     delete:
       summary: Remove parada por ID
+      tags:
+        - Stops
       parameters:
         - in: path
           name: id
@@ -245,7 +310,13 @@ paths:
   /api/buffers:
     get:
       summary: Lista todos os estados de buffer
+      description: |
+        Retorna estados de buffer com suporte a filtros e paginação.
+        Quando `session_id` é fornecido, retorna apenas estados da sessão especificada.
+      tags:
+        - Buffers
       parameters:
+        - $ref: '#/components/parameters/SessionIdFilter'
         - in: query
           name: page
           schema:
@@ -296,8 +367,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedResponse'
+        '403':
+          description: Acesso negado à sessão especificada
     post:
       summary: Cria um novo estado de buffer
+      tags:
+        - Buffers
       requestBody:
         required: true
         content:
@@ -307,9 +382,46 @@ paths:
       responses:
         '201':
           description: Estado de buffer criado
+
+  /api/buffers/latest:
+    get:
+      summary: Retorna o último estado de cada buffer
+      description: |
+        Retorna o estado mais recente de cada buffer único.
+        Quando `session_id` é fornecido, retorna apenas buffers da sessão especificada.
+        Quando `buffer_id` é fornecido, retorna apenas o último estado desse buffer específico.
+      tags:
+        - Buffers
+      parameters:
+        - $ref: '#/components/parameters/SessionIdFilter'
+        - in: query
+          name: buffer_id
+          schema:
+            type: string
+          description: ID do buffer específico (opcional)
+      responses:
+        '200':
+          description: Lista de estados mais recentes dos buffers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BufferState'
+                  count:
+                    type: integer
+        '403':
+          description: Acesso negado à sessão especificada
   /api/buffers/{id}:
     get:
       summary: Busca estado de buffer por ID
+      tags:
+        - Buffers
       parameters:
         - in: path
           name: id
@@ -323,6 +435,8 @@ paths:
           description: Estado de buffer não encontrado
     put:
       summary: Atualiza estado de buffer por ID
+      tags:
+        - Buffers
       parameters:
         - in: path
           name: id
@@ -342,6 +456,8 @@ paths:
           description: Estado de buffer não encontrado
     delete:
       summary: Remove estado de buffer por ID
+      tags:
+        - Buffers
       parameters:
         - in: path
           name: id
@@ -356,7 +472,13 @@ paths:
   /api/plantstate:
     get:
       summary: Lista todos os snapshots da planta
+      description: |
+        Retorna snapshots da planta com suporte a filtros por tempo.
+        Quando `session_id` é fornecido, retorna apenas snapshots da sessão especificada.
+      tags:
+        - PlantState
       parameters:
+        - $ref: '#/components/parameters/SessionIdFilter'
         - in: query
           name: start_time
           schema:
@@ -368,8 +490,25 @@ paths:
       responses:
         '200':
           description: Lista de snapshots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlantSnapshot'
+                  count:
+                    type: integer
+        '403':
+          description: Acesso negado à sessão especificada
     post:
       summary: Cria um novo snapshot
+      tags:
+        - PlantState
       requestBody:
         required: true
         content:
@@ -379,9 +518,38 @@ paths:
       responses:
         '201':
           description: Snapshot criado
+
+  /api/plantstate/latest:
+    get:
+      summary: Retorna o snapshot mais recente
+      description: |
+        Retorna o snapshot mais recente da planta.
+        Quando `session_id` é fornecido, retorna o snapshot mais recente da sessão especificada.
+      tags:
+        - PlantState
+      parameters:
+        - $ref: '#/components/parameters/SessionIdFilter'
+      responses:
+        '200':
+          description: Snapshot mais recente encontrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/PlantSnapshot'
+        '403':
+          description: Acesso negado à sessão especificada
+        '404':
+          description: Nenhum snapshot encontrado
   /api/plantstate/{id}:
     get:
       summary: Busca snapshot por ID
+      tags:
+        - PlantState
       parameters:
         - in: path
           name: id
@@ -395,6 +563,8 @@ paths:
           description: Snapshot não encontrado
     put:
       summary: Atualiza snapshot por ID
+      tags:
+        - PlantState
       parameters:
         - in: path
           name: id
@@ -414,6 +584,8 @@ paths:
           description: Snapshot não encontrado
     delete:
       summary: Remove snapshot por ID
+      tags:
+        - PlantState
       parameters:
         - in: path
           name: id
@@ -428,19 +600,29 @@ paths:
   /api/health:
     get:
       summary: Verifica saúde do sistema
+      tags:
+        - Health
       responses:
         '200':
           description: Status de saúde
   /api/health/detailed:
     get:
       summary: Verifica saúde detalhada do sistema
+      tags:
+        - Health
       responses:
         '200':
           description: Status detalhado
   /api/oee:
     get:
       summary: Lista todos os registros de OEE
+      description: |
+        Retorna registros de OEE (Overall Equipment Effectiveness) com suporte a filtros e paginação.
+        Quando `session_id` é fornecido, retorna apenas registros da sessão especificada.
+      tags:
+        - OEE
       parameters:
+        - $ref: '#/components/parameters/SessionIdFilter'
         - in: query
           name: page
           schema:
@@ -484,8 +666,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedResponse'
+        '403':
+          description: Acesso negado à sessão especificada
     post:
       summary: Cria um novo registro de OEE
+      tags:
+        - OEE
       requestBody:
         required: true
         content:
@@ -498,6 +684,8 @@ paths:
   /api/oee/{id}:
     get:
       summary: Busca registro OEE por ID
+      tags:
+        - OEE
       parameters:
         - in: path
           name: id
@@ -511,6 +699,8 @@ paths:
           description: Registro OEE não encontrado
     put:
       summary: Atualiza registro OEE por ID
+      tags:
+        - OEE
       parameters:
         - in: path
           name: id
@@ -530,6 +720,8 @@ paths:
           description: Registro OEE não encontrado
     delete:
       summary: Remove registro OEE por ID
+      tags:
+        - OEE
       parameters:
         - in: path
           name: id
@@ -544,7 +736,13 @@ paths:
   /api/mttr-mtbf:
     get:
       summary: Lista todos os registros de MTTR/MTBF
+      description: |
+        Retorna registros de MTTR (Mean Time To Repair) e MTBF (Mean Time Between Failures) com suporte a filtros e paginação.
+        Quando `session_id` é fornecido, retorna apenas registros da sessão especificada.
+      tags:
+        - MTTR-MTBF
       parameters:
+        - $ref: '#/components/parameters/SessionIdFilter'
         - in: query
           name: page
           schema:
@@ -592,8 +790,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedResponse'
+        '403':
+          description: Acesso negado à sessão especificada
     post:
       summary: Cria um novo registro de MTTR/MTBF
+      tags:
+        - MTTR-MTBF
       requestBody:
         required: true
         content:
@@ -606,6 +808,8 @@ paths:
   /api/mttr-mtbf/{id}:
     get:
       summary: Busca registro MTTR/MTBF por ID
+      tags:
+        - MTTR-MTBF
       parameters:
         - in: path
           name: id
@@ -619,6 +823,8 @@ paths:
           description: Registro MTTR/MTBF não encontrado
     put:
       summary: Atualiza registro MTTR/MTBF por ID
+      tags:
+        - MTTR-MTBF
       parameters:
         - in: path
           name: id
@@ -638,6 +844,8 @@ paths:
           description: Registro MTTR/MTBF não encontrado
     delete:
       summary: Remove registro MTTR/MTBF por ID
+      tags:
+        - MTTR-MTBF
       parameters:
         - in: path
           name: id
@@ -652,6 +860,8 @@ paths:
   /api/config:
     get:
       summary: Lista todas as configurações da planta
+      tags:
+        - Config
       responses:
         '200':
           description: Lista de configurações
@@ -671,6 +881,8 @@ paths:
     post:
       summary: Cria uma nova configuração da planta
       description: Se isDefault for true, atualiza a configuração default atual para false
+      tags:
+        - Config
       requestBody:
         required: true
         content:
@@ -687,6 +899,8 @@ paths:
   /api/config/default:
     get:
       summary: Retorna a configuração padrão da planta
+      tags:
+        - Config
       responses:
         '200':
           description: Configuração padrão encontrada
@@ -704,6 +918,8 @@ paths:
   /api/config/name/{name}:
     get:
       summary: Busca configuração por nome
+      tags:
+        - Config
       parameters:
         - in: path
           name: name
@@ -718,6 +934,8 @@ paths:
   /api/config/{id}:
     get:
       summary: Busca configuração por ID
+      tags:
+        - Config
       parameters:
         - in: path
           name: id
@@ -731,6 +949,8 @@ paths:
           description: Configuração não encontrada
     put:
       summary: Atualiza configuração por ID
+      tags:
+        - Config
       parameters:
         - in: path
           name: id
@@ -752,6 +972,8 @@ paths:
           description: Já existe uma configuração com este nome
     delete:
       summary: Remove configuração por ID
+      tags:
+        - Config
       parameters:
         - in: path
           name: id
@@ -767,6 +989,8 @@ paths:
     put:
       summary: Define uma configuração como padrão
       description: Remove o status de padrão da configuração atual e define a configuração especificada como padrão
+      tags:
+        - Config
       parameters:
         - in: path
           name: id
@@ -1109,14 +1333,34 @@ paths:
           description: Sessão não encontrada
 
 components:
+  parameters:
+    SessionIdFilter:
+      in: query
+      name: session_id
+      schema:
+        type: string
+        format: uuid
+      description: |
+        ID da sessão para filtrar dados.
+        Quando fornecido, apenas dados pertencentes à sessão especificada são retornados.
+        Requer que o usuário autenticado seja proprietário da sessão.
+        Retorna 403 se a sessão não existir ou não pertencer ao usuário.
   schemas:
     CarEvent:
       type: object
       properties:
+        id:
+          type: integer
+          description: ID único do evento
+        session_id:
+          type: string
+          format: uuid
+          description: ID da sessão à qual o evento pertence
         car_id:
           type: string
         event_type:
           type: string
+          enum: [CREATED, MOVED, COMPLETED, BUFFER_IN, BUFFER_OUT, REWORK_IN, REWORK_OUT]
         shop:
           type: string
         line:
@@ -1125,9 +1369,19 @@ components:
           type: string
         timestamp:
           type: integer
+        created_at:
+          type: integer
+          description: Timestamp de criação do registro
     StopEvent:
       type: object
       properties:
+        id:
+          type: integer
+          description: ID único da parada
+        session_id:
+          type: string
+          format: uuid
+          description: ID da sessão à qual a parada pertence
         stop_id:
           type: string
         shop:
@@ -1142,13 +1396,32 @@ components:
           type: integer
         status:
           type: string
+          enum: [PLANNED, IN_PROGRESS, COMPLETED]
         severity:
           type: string
+          enum: [LOW, MEDIUM, HIGH, PLANNED]
         type:
           type: string
+          enum: [PLANNED, RANDOM_GENERATE, PROPAGATION, MICRO]
+        category:
+          type: string
+          enum: [NEXT_FULL, PREV_EMPTY, PROCESS_QUALITY_FAILURE, PLANNED_STOP, SHIFT_CHANGE, NIGHT_STOP, LUNCH, MEETING]
+        reason:
+          type: string
+        duration_ms:
+          type: integer
+        created_at:
+          type: integer
     BufferState:
       type: object
       properties:
+        id:
+          type: integer
+          description: ID único do registro
+        session_id:
+          type: string
+          format: uuid
+          description: ID da sessão à qual o estado pertence
         buffer_id:
           type: string
         from_location:
@@ -1161,13 +1434,27 @@ components:
           type: integer
         status:
           type: string
+          enum: [EMPTY, AVAILABLE, FULL]
         type:
           type: string
+          enum: [BUFFER, REWORK_BUFFER, PART_BUFFER]
+        car_ids:
+          type: array
+          items:
+            type: string
+          description: IDs dos carros atualmente no buffer
         timestamp:
           type: integer
     PlantSnapshot:
       type: object
       properties:
+        id:
+          type: integer
+          description: ID único do snapshot
+        session_id:
+          type: string
+          format: uuid
+          description: ID da sessão à qual o snapshot pertence
         timestamp:
           type: integer
         total_stations:
@@ -1180,11 +1467,16 @@ components:
           type: integer
         snapshot_data:
           type: object
+          description: Dados completos do estado da planta em JSON
     OEE:
       type: object
       properties:
         id:
           type: integer
+        session_id:
+          type: string
+          format: uuid
+          description: ID da sessão à qual o registro pertence
         date:
           type: string
           description: Data no formato YYYY-MM-DD
@@ -1215,6 +1507,10 @@ components:
       properties:
         id:
           type: integer
+        session_id:
+          type: string
+          format: uuid
+          description: ID da sessão à qual o registro pertence
         date:
           type: string
           description: Data no formato YYYY-MM-DD

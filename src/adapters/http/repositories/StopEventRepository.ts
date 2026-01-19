@@ -4,6 +4,7 @@ import { BaseRepository } from './BaseRepository';
 
 export interface IStopEvent {
     id?: number;
+    session_id?: string;
     stop_id: string;
     shop: string;
     line: string;
@@ -27,6 +28,7 @@ export class StopEventRepository extends BaseRepository<IStopEvent> {
     protected allowedFilterColumns(): readonly string[] {
         return [
             'id',
+            'session_id',
             'stop_id',
             'shop',
             'line',
@@ -45,15 +47,16 @@ export class StopEventRepository extends BaseRepository<IStopEvent> {
 
     public async create(entity: Partial<IStopEvent>): Promise<IStopEvent> {
         const db = await this.getDb();
-        
+
         const sql = `
-            INSERT INTO ${this.tableName} 
-            (stop_id, shop, line, station, reason, severity, type, category, start_time, end_time, status, duration_ms)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            INSERT INTO ${this.tableName}
+            (session_id, stop_id, shop, line, station, reason, severity, type, category, start_time, end_time, status, duration_ms)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             ${this.getReturningClause(db)}
         `;
-        
+
         const params = [
+            entity.session_id ?? null,
             entity.stop_id,
             entity.shop,
             entity.line,
@@ -155,6 +158,36 @@ export class StopEventRepository extends BaseRepository<IStopEvent> {
         if (limit !== undefined && limit > 0) {
             const safeLimit = Math.min(limit, 10000);
             sql += ` LIMIT $2`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IStopEvent>(this.convertPlaceholders(db, sql), params);
+        return result.rows;
+    }
+
+    public async findBySessionId(sessionId: string, limit?: number): Promise<IStopEvent[]> {
+        const db = await this.getDb();
+        let sql = `SELECT * FROM ${this.tableName} WHERE session_id = $1 ORDER BY start_time DESC`;
+        const params: any[] = [sessionId];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IStopEvent>(this.convertPlaceholders(db, sql), params);
+        return result.rows;
+    }
+
+    public async findActiveStopsBySession(sessionId: string, limit?: number): Promise<IStopEvent[]> {
+        const db = await this.getDb();
+        let sql = `SELECT * FROM ${this.tableName} WHERE session_id = $1 AND status = $2 ORDER BY start_time DESC`;
+        const params: any[] = [sessionId, 'IN_PROGRESS'];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $3`;
             params.push(safeLimit);
         }
 

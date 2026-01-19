@@ -17,15 +17,33 @@ export class OEEController {
             const { date, shop, line, start_time, end_time } = req.query;
             const pagination = parsePaginationParams(req.query);
 
+            // Build filters object for paginated query
+            const filters: Record<string, any> = {};
+
+            // Session filtering - if validatedSessionId is present, filter by it
+            if (req.validatedSessionId) {
+                filters.session_id = req.validatedSessionId;
+            }
+
             // Filtro por range de tempo (with pagination)
             if (start_time && end_time) {
-                const result = await this.repository.findByTimeRange(
-                    parseInt(start_time as string, 10),
-                    parseInt(end_time as string, 10)
-                );
-                // Apply in-memory pagination to time range results
-                const paginatedData = paginateArray(result.data, pagination);
-                res.json(createPaginatedResponse(paginatedData, pagination, result.data.length));
+                // For time range queries, apply session filter if present
+                if (req.validatedSessionId) {
+                    const result = await this.repository.findBySessionId(req.validatedSessionId);
+                    const filtered = result.filter(r =>
+                        (r.created_at ?? 0) >= parseInt(start_time as string, 10) &&
+                        (r.created_at ?? 0) <= parseInt(end_time as string, 10)
+                    );
+                    const paginatedData = paginateArray(filtered, pagination);
+                    res.json(createPaginatedResponse(paginatedData, pagination, filtered.length));
+                } else {
+                    const result = await this.repository.findByTimeRange(
+                        parseInt(start_time as string, 10),
+                        parseInt(end_time as string, 10)
+                    );
+                    const paginatedData = paginateArray(result.data, pagination);
+                    res.json(createPaginatedResponse(paginatedData, pagination, result.data.length));
+                }
                 return;
             }
 
@@ -36,12 +54,15 @@ export class OEEController {
                     shop as string,
                     line as string
                 );
+                // Validate session ownership if filter is active
+                if (record && req.validatedSessionId && record.session_id !== req.validatedSessionId) {
+                    res.json(createPaginatedResponse([], pagination, 0));
+                    return;
+                }
                 res.json(createPaginatedResponse(record ? [record] : [], pagination, record ? 1 : 0));
                 return;
             }
 
-            // Build filters object for paginated query
-            const filters: Record<string, any> = {};
             if (date) filters.date = date;
             if (shop) filters.shop = shop;
             if (line) filters.line = line;

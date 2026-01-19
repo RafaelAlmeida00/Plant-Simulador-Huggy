@@ -30,25 +30,44 @@ export class BuffersController {
 
             // Filtro por range de tempo
             if (start_time && end_time) {
-                const result = await this.repository.findByTimeRange(
-                    parseInt(start_time as string, 10),
-                    parseInt(end_time as string, 10)
-                );
-                const data = result.data.map((b: IBufferState) => this.enrich(b));
-                res.json({ success: true, data, count: data.length, truncated: result.truncated });
+                // For time range queries, apply session filter if present
+                if (req.validatedSessionId) {
+                    const result = await this.repository.findBySessionId(req.validatedSessionId);
+                    const filtered = result.filter(b =>
+                        b.timestamp >= parseInt(start_time as string, 10) &&
+                        b.timestamp <= parseInt(end_time as string, 10)
+                    );
+                    const data = filtered.map((b: IBufferState) => this.enrich(b));
+                    res.json({ success: true, data, count: data.length, truncated: false });
+                } else {
+                    const result = await this.repository.findByTimeRange(
+                        parseInt(start_time as string, 10),
+                        parseInt(end_time as string, 10)
+                    );
+                    const data = result.data.map((b: IBufferState) => this.enrich(b));
+                    res.json({ success: true, data, count: data.length, truncated: result.truncated });
+                }
                 return;
             }
 
             // Filtros específicos
             if (buffer_id) {
-                const buffers = await this.repository.findByBufferId(buffer_id as string);
+                let buffers = await this.repository.findByBufferId(buffer_id as string);
+                // Apply session filter if present
+                if (req.validatedSessionId) {
+                    buffers = buffers.filter(b => b.session_id === req.validatedSessionId);
+                }
                 const data = buffers.map(b => this.enrich(b));
                 res.json({ success: true, data, count: data.length });
                 return;
             }
 
             if (status) {
-                const buffers = await this.repository.findByStatus(status as string);
+                let buffers = await this.repository.findByStatus(status as string);
+                // Apply session filter if present
+                if (req.validatedSessionId) {
+                    buffers = buffers.filter(b => b.session_id === req.validatedSessionId);
+                }
                 const data = buffers.map(b => this.enrich(b));
                 res.json({ success: true, data, count: data.length });
                 return;
@@ -56,6 +75,10 @@ export class BuffersController {
 
             // Filtros genéricos
             const filters: Record<string, any> = {};
+            // Session filtering - if validatedSessionId is present, filter by it
+            if (req.validatedSessionId) {
+                filters.session_id = req.validatedSessionId;
+            }
             if (type) filters.type = type;
             if (from_location) filters.from_location = from_location;
             if (to_location) filters.to_location = to_location;
@@ -72,16 +95,27 @@ export class BuffersController {
     public async getLatest(req: Request, res: Response): Promise<void> {
         try {
             const { buffer_id } = req.query;
-            
+
             if (buffer_id) {
                 const buffer = await this.repository.findLatestByBufferId(buffer_id as string);
+                // Validate session ownership if filter is active
+                if (buffer && req.validatedSessionId && buffer.session_id !== req.validatedSessionId) {
+                    res.json({ success: true, data: [], count: 0 });
+                    return;
+                }
                 const data = buffer ? [this.enrich(buffer)] : [];
                 res.json({ success: true, data, count: data.length });
                 return;
             }
 
             // Retorna todos os buffers (último estado)
-            const data = await this.repository.findLatestPerBuffer();
+            // Use session-aware query if session filter is present
+            let data: IBufferState[];
+            if (req.validatedSessionId) {
+                data = await this.repository.findLatestPerBufferBySession(req.validatedSessionId);
+            } else {
+                data = await this.repository.findLatestPerBuffer();
+            }
             const enriched = data.map(b => this.enrich(b));
             res.json({ success: true, data: enriched, count: enriched.length });
         } catch (error: any) {

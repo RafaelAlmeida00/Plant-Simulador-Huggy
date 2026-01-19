@@ -23,6 +23,7 @@ export class PlantSnapshotRepository extends BaseRepository<IPlantSnapshotRecord
     protected allowedFilterColumns(): readonly string[] {
         return [
             'id',
+            'session_id',
             'timestamp',
             'total_stations',
             'total_occupied',
@@ -104,8 +105,34 @@ export class PlantSnapshotRepository extends BaseRepository<IPlantSnapshotRecord
     public async findLatest(): Promise<IPlantSnapshotRecord | null> {
         const db = await this.getDb();
         const sql = `SELECT * FROM ${this.tableName} ORDER BY timestamp DESC LIMIT 1`;
-        
+
         const result = await db.query<IPlantSnapshotRecord>(sql);
+        if (result.rows.length > 0) {
+            return this.normalize(result.rows[0]);
+        }
+        return null;
+    }
+
+    public async findBySessionId(sessionId: string, limit?: number): Promise<IPlantSnapshotRecord[]> {
+        const db = await this.getDb();
+        let sql = `SELECT * FROM ${this.tableName} WHERE session_id = $1 ORDER BY timestamp DESC`;
+        const params: any[] = [sessionId];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IPlantSnapshotRecord>(this.convertPlaceholders(db, sql), params);
+        return result.rows.map(r => this.normalize(r));
+    }
+
+    public async findLatestBySessionId(sessionId: string): Promise<IPlantSnapshotRecord | null> {
+        const db = await this.getDb();
+        const sql = `SELECT * FROM ${this.tableName} WHERE session_id = $1 ORDER BY timestamp DESC LIMIT 1`;
+
+        const result = await db.query<IPlantSnapshotRecord>(this.convertPlaceholders(db, sql), [sessionId]);
         if (result.rows.length > 0) {
             return this.normalize(result.rows[0]);
         }

@@ -8,6 +8,12 @@ import { IFlowPlant } from '../utils/shared';
 import { DatabaseFactory } from '../adapters/database/DatabaseFactory';
 import { logger } from '../utils/logger';
 
+// Repositories for event persistence
+import { CarEventRepository } from '../adapters/http/repositories/CarEventRepository';
+import { StopEventRepository } from '../adapters/http/repositories/StopEventRepository';
+import { OEERepository } from '../adapters/http/repositories/OEERepository';
+import { MTTRMTBFRepository } from '../adapters/http/repositories/MTTRMTBFRepository';
+
 // Types for worker communication
 interface WorkerMessage {
     type: 'INIT' | 'START' | 'PAUSE' | 'RESUME' | 'STOP' | 'RECOVER';
@@ -63,6 +69,12 @@ class SimulationWorker {
     private heartbeatInterval: NodeJS.Timeout | null = null;
     private initialized: boolean = false;
 
+    // Repositories for event persistence
+    private carEventRepository: CarEventRepository | null = null;
+    private stopEventRepository: StopEventRepository | null = null;
+    private oeeRepository: OEERepository | null = null;
+    private mttrMtbfRepository: MTTRMTBFRepository | null = null;
+
     private readonly HEARTBEAT_INTERVAL_MS = 5_000;
 
     constructor(sessionId: string) {
@@ -102,6 +114,14 @@ class SimulationWorker {
             await this.serviceLocator.initializeInstance();
 
             this.log('ServiceLocator initialized');
+
+            // Initialize repositories for event persistence
+            this.carEventRepository = new CarEventRepository();
+            this.stopEventRepository = new StopEventRepository();
+            this.oeeRepository = new OEERepository();
+            this.mttrMtbfRepository = new MTTRMTBFRepository();
+
+            this.log('Repositories initialized');
 
             // Create simulation clock with session-aware configuration
             const clockOptions: SimulationClockOptions = {
@@ -278,7 +298,7 @@ class SimulationWorker {
     }
 
     /**
-     * Create simulation callbacks that forward events to main thread
+     * Create simulation callbacks that forward events to main thread and persist to database
      */
     private createCallbacks() {
         return {
@@ -298,76 +318,124 @@ class SimulationWorker {
                 });
             },
             onCarCreated: (carId: string, shop: string, line: string, station: string, timestamp: number) => {
+                // Persist to database
+                this.persistCarEvent('CREATED', carId, shop, line, station, timestamp);
+
+                // Broadcast to WebSocket
                 this.sendEvent('EVENT', {
                     eventType: 'carCreated',
                     carId, shop, line, station, timestamp
                 });
             },
             onCarMoved: (carId: string, from: any, to: any, timestamp: number) => {
+                // Persist to database
+                this.persistCarEvent('MOVED', carId, to.shop, to.line, to.station, timestamp, { from, to });
+
+                // Broadcast to WebSocket
                 this.sendEvent('EVENT', {
                     eventType: 'carMoved',
                     carId, from, to, timestamp
                 });
             },
             onCarCompleted: (carId: string, location: any, totalLeadtimeMs: number, timestamp: number) => {
+                // Persist to database
+                this.persistCarEvent('COMPLETED', carId, location.shop, location.line, 'DELIVERY', timestamp, { totalLeadtimeMs });
+
+                // Broadcast to WebSocket
                 this.sendEvent('EVENT', {
                     eventType: 'carCompleted',
                     carId, location, totalLeadtimeMs, timestamp
                 });
             },
             onBufferIn: (carId: string, bufferId: string, loc: any, fromStation: string, timestamp: number) => {
+                // Persist to database
+                this.persistCarEvent('BUFFER_IN', carId, loc.shop, loc.line, fromStation, timestamp, { bufferId });
+
+                // Broadcast to WebSocket
                 this.sendEvent('EVENT', {
                     eventType: 'bufferIn',
                     carId, bufferId, loc, fromStation, timestamp
                 });
             },
             onBufferOut: (carId: string, bufferId: string, shop: string, line: string, toStation: string, timestamp: number) => {
+                // Persist to database
+                this.persistCarEvent('BUFFER_OUT', carId, shop, line, toStation, timestamp, { bufferId });
+
+                // Broadcast to WebSocket
                 this.sendEvent('EVENT', {
                     eventType: 'bufferOut',
                     carId, bufferId, shop, line, toStation, timestamp
                 });
             },
             onStopStartedStopLine: (stop: any) => {
+                // Persist to database
+                this.persistStopEvent(stop, 'IN_PROGRESS');
+
+                // Broadcast to WebSocket
                 this.sendEvent('EVENT', {
                     eventType: 'stopStarted',
                     stop: this.serializeStop(stop)
                 });
             },
             onStopEndedStopLine: (stop: any) => {
+                // Update stop in database
+                this.updateStopEvent(stop);
+
+                // Broadcast to WebSocket
                 this.sendEvent('EVENT', {
                     eventType: 'stopEnded',
                     stop: this.serializeStop(stop)
                 });
             },
             onOEECalculated: (oeeData: any) => {
+                // Persist OEE data
+                this.persistOEE(oeeData);
+
+                // Broadcast to WebSocket
                 this.sendEvent('EVENT', {
                     eventType: 'oeeCalculated',
                     oee: oeeData
                 });
             },
             onOEEShiftEnd: (oeeData: any) => {
+                // Persist OEE shift end data
+                this.persistOEE(oeeData);
+
+                // Broadcast to WebSocket
                 this.sendEvent('EVENT', {
                     eventType: 'oeeShiftEnd',
                     oee: oeeData
                 });
             },
             onMTTRMTBFCalculated: (data: any) => {
+                // Persist MTTR/MTBF data
+                this.persistMTTRMTBF(data);
+
+                // Broadcast to WebSocket
                 this.sendEvent('EVENT', {
                     eventType: 'mttrMtbfCalculated',
                     data
                 });
             },
-            onCars: (cars: any, timestamp: number) => {
+            onCars: (_cars: any, _timestamp: number) => {
                 // Only send periodically to avoid flooding
                 // This is handled by throttling in the main thread
             },
             onReworkInDetailed: (carId: string, bufferId: string, shop: string, line: string, station: string, defectId: string, timestamp: number) => {
+                // Persist to database
+                this.persistCarEvent('REWORK_IN', carId, shop, line, station, timestamp, { bufferId, defectId });
+
+                // Broadcast to WebSocket
                 this.sendEvent('EVENT', {
                     eventType: 'reworkIn',
                     carId, bufferId, shop, line, station, defectId, timestamp
                 });
             },
             onReworkOutDetailed: (carId: string, bufferId: string, shop: string, line: string, station: string, timestamp: number) => {
+                // Persist to database
+                this.persistCarEvent('REWORK_OUT', carId, shop, line, station, timestamp, { bufferId });
+
+                // Broadcast to WebSocket
                 this.sendEvent('EVENT', {
                     eventType: 'reworkOut',
                     carId, bufferId, shop, line, station, timestamp
@@ -394,6 +462,137 @@ class SimulationWorker {
             line: stop.line,
             station: stop.station
         };
+    }
+
+    // ============================================================
+    // EVENT PERSISTENCE METHODS
+    // ============================================================
+
+    /**
+     * Persist a car event to the database
+     */
+    private persistCarEvent(
+        eventType: string,
+        carId: string,
+        shop: string,
+        line: string,
+        station: string,
+        timestamp: number,
+        data?: any
+    ): void {
+        if (!this.carEventRepository) return;
+
+        this.carEventRepository.create({
+            session_id: this.sessionId,
+            car_id: carId,
+            event_type: eventType,
+            shop,
+            line,
+            station,
+            timestamp,
+            data
+        }).catch(err => {
+            this.log(`Failed to persist car event: ${err.message}`);
+        });
+    }
+
+    /**
+     * Persist a stop event to the database
+     */
+    private persistStopEvent(stop: any, status: string): void {
+        if (!this.stopEventRepository) return;
+
+        this.stopEventRepository.create({
+            session_id: this.sessionId,
+            stop_id: stop.id,
+            shop: stop.shop,
+            line: stop.line,
+            station: stop.station,
+            reason: stop.reason,
+            severity: stop.severity,
+            type: stop.type,
+            category: stop.category,
+            start_time: stop.startTime instanceof Date ? stop.startTime.getTime() : stop.startTime,
+            end_time: stop.endTime instanceof Date ? stop.endTime.getTime() : stop.endTime,
+            status,
+            duration_ms: stop.durationMs
+        }).catch(err => {
+            this.log(`Failed to persist stop event: ${err.message}`);
+        });
+    }
+
+    /**
+     * Update a stop event when it ends
+     */
+    private async updateStopEvent(stop: any): Promise<void> {
+        if (!this.stopEventRepository) return;
+
+        try {
+            const existing = await this.stopEventRepository.findByStopId(stop.id);
+            if (existing && existing.id) {
+                await this.stopEventRepository.update(existing.id, {
+                    status: 'COMPLETED',
+                    end_time: stop.endTime instanceof Date ? stop.endTime.getTime() : stop.endTime,
+                    duration_ms: stop.durationMs
+                });
+            }
+        } catch (err: any) {
+            this.log(`Failed to update stop event: ${err.message}`);
+        }
+    }
+
+    /**
+     * Persist OEE data to the database
+     */
+    private persistOEE(oeeData: any): void {
+        if (!this.oeeRepository) return;
+
+        // OEE data can be for a single line or multiple lines
+        const records = Array.isArray(oeeData) ? oeeData : [oeeData];
+
+        for (const record of records) {
+            if (!record.shop || !record.line) continue;
+
+            this.oeeRepository.create({
+                session_id: this.sessionId,
+                date: record.date || new Date().toISOString().split('T')[0],
+                shop: record.shop,
+                line: record.line,
+                production_time: record.productionTime ?? record.production_time ?? 0,
+                cars_production: record.carsProduction ?? record.cars_production ?? 0,
+                takt_time: record.taktTime ?? record.takt_time ?? 0,
+                diff_time: record.diffTime ?? record.diff_time ?? 0,
+                oee: record.oee ?? 0
+            }).catch(err => {
+                this.log(`Failed to persist OEE: ${err.message}`);
+            });
+        }
+    }
+
+    /**
+     * Persist MTTR/MTBF data to the database
+     */
+    private persistMTTRMTBF(data: any): void {
+        if (!this.mttrMtbfRepository) return;
+
+        // MTTR/MTBF data can be for a single station or multiple
+        const records = Array.isArray(data) ? data : [data];
+
+        for (const record of records) {
+            if (!record.shop || !record.line || !record.station) continue;
+
+            this.mttrMtbfRepository.create({
+                session_id: this.sessionId,
+                date: record.date || new Date().toISOString().split('T')[0],
+                shop: record.shop,
+                line: record.line,
+                station: record.station,
+                mttr: record.mttr ?? 0,
+                mtbf: record.mtbf ?? 0
+            }).catch(err => {
+                this.log(`Failed to persist MTTR/MTBF: ${err.message}`);
+            });
+        }
     }
 
     /**

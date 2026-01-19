@@ -25,6 +25,7 @@ export class BufferStateRepository extends BaseRepository<IBufferState> {
     protected allowedFilterColumns(): readonly string[] {
         return [
             'id',
+            'session_id',
             'buffer_id',
             'from_location',
             'to_location',
@@ -178,6 +179,49 @@ export class BufferStateRepository extends BaseRepository<IBufferState> {
         if (limit !== undefined && limit > 0) {
             const safeLimit = Math.min(limit, 10000);
             sql += ` LIMIT $1`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IBufferState>(this.convertPlaceholders(db, sql), params);
+        return result.rows.map(r => this.normalize(r));
+    }
+
+    public async findBySessionId(sessionId: string, limit?: number): Promise<IBufferState[]> {
+        const db = await this.getDb();
+        let sql = `SELECT * FROM ${this.tableName} WHERE session_id = $1 ORDER BY timestamp DESC`;
+        const params: any[] = [sessionId];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<IBufferState>(this.convertPlaceholders(db, sql), params);
+        return result.rows.map(r => this.normalize(r));
+    }
+
+    public async findLatestPerBufferBySession(sessionId: string, limit?: number): Promise<IBufferState[]> {
+        const db = await this.getDb();
+
+        let sql = `
+            SELECT b.*
+            FROM ${this.tableName} b
+            JOIN (
+                SELECT buffer_id, MAX(timestamp) AS max_ts
+                FROM ${this.tableName}
+                WHERE session_id = $1
+                GROUP BY buffer_id
+            ) m
+              ON b.buffer_id = m.buffer_id AND b.timestamp = m.max_ts AND b.session_id = $1
+            ORDER BY b.timestamp DESC
+        `;
+
+        const params: any[] = [sessionId];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
             params.push(safeLimit);
         }
 

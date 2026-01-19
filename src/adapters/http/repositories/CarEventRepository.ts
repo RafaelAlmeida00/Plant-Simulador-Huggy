@@ -4,6 +4,7 @@ import { BaseRepository } from './BaseRepository';
 
 export interface ICarEvent {
     id?: number;
+    session_id?: string;
     car_id: string;
     event_type: string;
     shop: string;
@@ -20,7 +21,7 @@ export class CarEventRepository extends BaseRepository<ICarEvent> {
     protected timestampColumn = 'timestamp';
 
     protected allowedFilterColumns(): readonly string[] {
-        return ['id', 'car_id', 'event_type', 'shop', 'line', 'station', 'timestamp', 'created_at'] as const;
+        return ['id', 'session_id', 'car_id', 'event_type', 'shop', 'line', 'station', 'timestamp', 'created_at'] as const;
     }
 
     protected override normalize(event: ICarEvent): ICarEvent {
@@ -36,16 +37,17 @@ export class CarEventRepository extends BaseRepository<ICarEvent> {
 
     public async create(entity: Partial<ICarEvent>): Promise<ICarEvent> {
         const db = await this.getDb();
-        
+
         const sql = `
-            INSERT INTO ${this.tableName} 
-            (car_id, event_type, shop, line, station, timestamp, data)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO ${this.tableName}
+            (session_id, car_id, event_type, shop, line, station, timestamp, data)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ${this.getReturningClause(db)}
         `;
-        
+
         const dataJson = entity.data ? JSON.stringify(entity.data) : null;
         const params = [
+            entity.session_id ?? null,
             entity.car_id,
             entity.event_type,
             entity.shop,
@@ -146,6 +148,21 @@ export class CarEventRepository extends BaseRepository<ICarEvent> {
         return result.rows.map(r => this.normalize(r));
     }
 
+    public async findBySessionId(sessionId: string, limit?: number): Promise<ICarEvent[]> {
+        const db = await this.getDb();
+        let sql = `SELECT * FROM ${this.tableName} WHERE session_id = $1 ORDER BY timestamp DESC`;
+        const params: any[] = [sessionId];
+
+        if (limit !== undefined && limit > 0) {
+            const safeLimit = Math.min(limit, 10000);
+            sql += ` LIMIT $2`;
+            params.push(safeLimit);
+        }
+
+        const result = await db.query<ICarEvent>(this.convertPlaceholders(db, sql), params);
+        return result.rows.map(r => this.normalize(r));
+    }
+
     /**
      * Optimized batch insert - uses multi-row INSERT for better performance
      * Significantly faster than individual inserts for large batches
@@ -169,8 +186,9 @@ export class CarEventRepository extends BaseRepository<ICarEvent> {
                     let paramIndex = 1;
 
                     for (const entity of batch) {
-                        valuesClauses.push(`($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++})`);
+                        valuesClauses.push(`($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++})`);
                         params.push(
+                            entity.session_id ?? null,
                             entity.car_id,
                             entity.event_type,
                             entity.shop,
@@ -183,7 +201,7 @@ export class CarEventRepository extends BaseRepository<ICarEvent> {
 
                     const sql = `
                         INSERT INTO ${this.tableName}
-                        (car_id, event_type, shop, line, station, timestamp, data)
+                        (session_id, car_id, event_type, shop, line, station, timestamp, data)
                         VALUES ${valuesClauses.join(', ')}
                         RETURNING *
                     `;

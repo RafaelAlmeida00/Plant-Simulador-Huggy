@@ -8,6 +8,7 @@ import { DeltaService, DeltaResult } from './DeltaService';
 import { BackpressureManager, AckPayload } from './BackpressureManager';
 import { ChunkingService } from './ChunkingService';
 import { setupOptionalSocketAuth } from '../middleware/socketAuth';
+import { SessionRepository } from '../repositories/SessionRepository';
 
 export interface SocketEventData {
     type: string;
@@ -40,6 +41,9 @@ export class SocketServer {
 
     // Flag to enable/disable delta mode (can be toggled)
     private deltaEnabled: boolean = true;
+
+    // Session repository for ownership validation
+    private sessionRepository: SessionRepository = new SessionRepository();
 
     private constructor() {}
 
@@ -869,7 +873,7 @@ export class SocketServer {
      */
     public setupSessionHandlers(socket: Socket): void {
         // Subscribe to a session
-        socket.on('subscribe:session', (data: { sessionId: string; channel: string }) => {
+        socket.on('subscribe:session', async (data: { sessionId: string; channel: string }) => {
             if (!data.sessionId || !data.channel) {
                 socket.emit('error', { message: 'sessionId and channel are required' });
                 return;
@@ -878,7 +882,31 @@ export class SocketServer {
                 socket.emit('error', { message: `Invalid channel: ${data.channel}` });
                 return;
             }
-            this.subscribeToSession(socket, data.sessionId, data.channel);
+
+            // Validate session ownership
+            const userId = socket.user?.id;
+            if (!userId) {
+                // Allow anonymous users to subscribe (for development/testing)
+                // In production, this could be made stricter
+                console.log(`[SOCKET] Anonymous user subscribing to session ${data.sessionId}:${data.channel}`);
+                this.subscribeToSession(socket, data.sessionId, data.channel);
+                return;
+            }
+
+            // Verify user owns the session
+            try {
+                const session = await this.sessionRepository.findByIdForUser(data.sessionId, userId);
+                if (!session) {
+                    socket.emit('error', { message: 'Session not found or access denied' });
+                    console.log(`[SOCKET] User ${userId} denied access to session ${data.sessionId}`);
+                    return;
+                }
+
+                this.subscribeToSession(socket, data.sessionId, data.channel);
+            } catch (err: any) {
+                console.error(`[SOCKET] Error validating session ownership:`, err.message);
+                socket.emit('error', { message: 'Error validating session access' });
+            }
         });
 
         // Unsubscribe from a session

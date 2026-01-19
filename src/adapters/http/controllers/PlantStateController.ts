@@ -17,16 +17,32 @@ export class PlantStateController {
 
             // Filtro por range de tempo
             if (start_time && end_time) {
-                const result = await this.repository.findByTimeRange(
-                    parseInt(start_time as string, 10),
-                    parseInt(end_time as string, 10)
-                );
-                res.json({ success: true, data: result.data, count: result.data.length, truncated: result.truncated });
+                // For time range queries, apply session filter if present
+                if (req.validatedSessionId) {
+                    const result = await this.repository.findBySessionId(req.validatedSessionId);
+                    const filtered = result.filter(s =>
+                        s.timestamp >= parseInt(start_time as string, 10) &&
+                        s.timestamp <= parseInt(end_time as string, 10)
+                    );
+                    res.json({ success: true, data: filtered, count: filtered.length, truncated: false });
+                } else {
+                    const result = await this.repository.findByTimeRange(
+                        parseInt(start_time as string, 10),
+                        parseInt(end_time as string, 10)
+                    );
+                    res.json({ success: true, data: result.data, count: result.data.length, truncated: result.truncated });
+                }
                 return;
             }
 
-            const snapshots = await this.repository.findAll();
-            
+            // Apply session filter if present
+            let snapshots: IPlantSnapshotRecord[];
+            if (req.validatedSessionId) {
+                snapshots = await this.repository.findBySessionId(req.validatedSessionId);
+            } else {
+                snapshots = await this.repository.findAll();
+            }
+
             res.json({ success: true, data: snapshots, count: snapshots.length });
         } catch (error: any) {
             res.status(500).json({ success: false, error: error.message });
@@ -36,8 +52,14 @@ export class PlantStateController {
     // GET /api/plantstate/latest - Retorna o snapshot mais recente
     public async getLatest(req: Request, res: Response): Promise<void> {
         try {
-            const snapshot = await this.repository.findLatest();
-            
+            // Use session-aware query if session filter is present
+            let snapshot: IPlantSnapshotRecord | null;
+            if (req.validatedSessionId) {
+                snapshot = await this.repository.findLatestBySessionId(req.validatedSessionId);
+            } else {
+                snapshot = await this.repository.findLatest();
+            }
+
             if (!snapshot) {
                 res.status(404).json({ success: false, error: 'No plant snapshot found' });
                 return;

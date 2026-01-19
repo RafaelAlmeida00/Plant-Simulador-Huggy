@@ -1,13 +1,24 @@
 asyncapi: 3.0.0
 info:
   title: Plant Simulador WebSocket API
-  version: 1.1.0
+  version: 1.2.0
   description: >
     API de comunicação em tempo real via WebSocket (socket.io) para o
     Plant-Simulador.
 
     Permite o front end receber atualizações instantâneas de eventos, estados,
     notificações e enviar comandos de simulação.
+
+
+    ## Session Isolation
+
+    - **Multi-session Support**: Cada simulação roda em um Worker Thread isolado
+
+    - **Session Ownership Validation**: Ao se inscrever em uma sessão, o servidor valida se o usuário autenticado é proprietário
+
+    - **Subscribe Events**: Use `subscribe:session` com `{sessionId, channel}` para se inscrever em eventos de uma sessão específica
+
+    - **Error Handling**: Se a sessão não existir ou não pertencer ao usuário, um evento `error` será emitido
 
 
     ## Performance Features
@@ -40,6 +51,10 @@ x-socketio:
           type:
             type: string
             example: "CAR_EVENT"
+          sessionId:
+            type: string
+            format: uuid
+            description: ID da sessão que gerou este evento
           data:
             type: object
             properties:
@@ -76,6 +91,10 @@ x-socketio:
               type:
                 type: string
                 example: "STOP_EVENT"
+              sessionId:
+                type: string
+                format: uuid
+                description: ID da sessão que gerou este evento
               data:
                 type: object
                 properties:
@@ -117,6 +136,10 @@ x-socketio:
               type:
                 type: string
                 example: "STOPS_STATE"
+              sessionId:
+                type: string
+                format: uuid
+                description: ID da sessão que gerou este evento
               data:
                 type: array
                 items:
@@ -148,6 +171,10 @@ x-socketio:
               type:
                 type: string
                 example: "STOPS_STATE_DETAILED"
+              sessionId:
+                type: string
+                format: uuid
+                description: ID da sessão que gerou este evento
               data:
                 type: object
                 properties:
@@ -238,6 +265,10 @@ x-socketio:
               type:
                 type: string
                 example: "BUFFER_EVENT"
+              sessionId:
+                type: string
+                format: uuid
+                description: ID da sessão que gerou este evento
               data:
                 type: object
                 properties:
@@ -272,6 +303,10 @@ x-socketio:
               type:
                 type: string
                 example: "BUFFERS_STATE"
+              sessionId:
+                type: string
+                format: uuid
+                description: ID da sessão que gerou este evento
               data:
                 type: array
                 items:
@@ -304,6 +339,10 @@ x-socketio:
           type:
             type: string
             example: "PLANT_STATE"
+          sessionId:
+            type: string
+            format: uuid
+            description: ID da sessão que gerou este evento
           data:
             type: object
             description: "snapshot completo da planta"
@@ -411,6 +450,10 @@ x-socketio:
           type:
             type: string
             example: "CARS_STATE"
+          sessionId:
+            type: string
+            format: uuid
+            description: ID da sessão que gerou este evento
           data:
             type: array
             items:
@@ -486,6 +529,10 @@ x-socketio:
           type:
             type: string
             example: "OEE_UPDATE"
+          sessionId:
+            type: string
+            format: uuid
+            description: ID da sessão que gerou este evento
           data:
             type: array
             description: Lista de OEE por linha
@@ -540,6 +587,10 @@ x-socketio:
           type:
             type: string
             example: "MTTR_MTBF_UPDATE"
+          sessionId:
+            type: string
+            format: uuid
+            description: ID da sessão que gerou este evento
           data:
             type: array
             description: Lista de MTTR/MTBF por station, linha e shop
@@ -579,7 +630,25 @@ x-socketio:
       emits: ["session_event", "session_state"]
       hasLegacyAliases: false
       legacyEmits: []
-      description: "Eventos de sessão específica (state changes, recovery, errors). Cliente deve se inscrever com session:{sessionId}"
+      description: |
+        Eventos de sessão específica (state changes, recovery, errors).
+
+        ## Subscription Protocol
+        Para se inscrever, emita o evento `subscribe:session` com payload:
+        ```json
+        { "sessionId": "uuid-da-sessao", "channel": "session" }
+        ```
+
+        ## Ownership Validation
+        - Se o usuário estiver autenticado, o servidor valida que ele é proprietário da sessão
+        - Se a sessão não existir ou não pertencer ao usuário, um evento `error` será emitido:
+          ```json
+          { "message": "Session not found or access denied" }
+          ```
+        - Usuários anônimos podem se inscrever (útil para desenvolvimento/testes)
+
+        ## Unsubscription
+        Para cancelar a inscrição, emita `unsubscribe:session` com o mesmo payload.
       variants:
         session_event:
           payload:
@@ -747,7 +816,25 @@ channels:
     messages:
       subscribe.message:
         $ref: '#/components/messages/SessionEvent'
-    description: Canal de eventos de uma sessão específica. Usar session:{sessionId} para se inscrever.
+    description: |
+      Eventos de sessão específica (state changes, recovery, errors).
+
+      ## Subscription Protocol
+      Para se inscrever, emita o evento `subscribe:session` com payload:
+      ```json
+      { "sessionId": "uuid-da-sessao", "channel": "session" }
+      ```
+
+      ## Ownership Validation
+      - Se o usuário estiver autenticado, o servidor valida que ele é proprietário da sessão
+      - Se a sessão não existir ou não pertencer ao usuário, um evento `error` será emitido:
+        ```json
+        { "message": "Session not found or access denied" }
+        ```
+      - Usuários anônimos podem se inscrever (útil para desenvolvimento/testes)
+
+      ## Unsubscription
+      Para cancelar a inscrição, emita `unsubscribe:session` com o mesmo payload.
 
 operations:
   plantUpdate.subscribe:
@@ -861,7 +948,10 @@ operations:
     action: send
     channel:
       $ref: '#/channels/session'
-    summary: Receber eventos de uma sessão específica (state changes, recovery, simulation events)
+    summary: |
+      Receber eventos de uma sessão específica (state changes, recovery, simulation events).
+      Requer subscription via evento subscribe:session com sessionId e channel.
+      A subscrição é validada contra o usuário autenticado.
     messages:
       - $ref: '#/channels/session/messages/subscribe.message'
 
@@ -918,6 +1008,10 @@ components:
           type:
             type: string
             enum: ["CAR_EVENT"]
+          sessionId:
+            type: string
+            format: uuid
+            description: ID da sessão que gerou este evento
           data:
             type: object
             properties:
@@ -951,6 +1045,10 @@ components:
           type:
             type: string
             enum: ["STOPS_STATE"]
+          sessionId:
+            type: string
+            format: uuid
+            description: ID da sessão que gerou este evento
           data:
             type: array
             items:
@@ -984,6 +1082,10 @@ components:
           type:
             type: string
             enum: ["STOP_EVENT"]
+          sessionId:
+            type: string
+            format: uuid
+            description: ID da sessão que gerou este evento
           data:
             type: object
             properties:
@@ -1027,6 +1129,10 @@ components:
           type:
             type: string
             enum: ["STOPS_STATE_DETAILED"]
+          sessionId:
+            type: string
+            format: uuid
+            description: ID da sessão que gerou este evento
           data:
             type: object
             properties:
@@ -1113,6 +1219,10 @@ components:
           type:
             type: string
             enum: ["BUFFERS_STATE"]
+          sessionId:
+            type: string
+            format: uuid
+            description: ID da sessão que gerou este evento
           data:
             type: array
             items:
@@ -1143,6 +1253,10 @@ components:
           type:
             type: string
             enum: ["BUFFER_EVENT"]
+          sessionId:
+            type: string
+            format: uuid
+            description: ID da sessão que gerou este evento
           data:
             type: object
             properties:
@@ -1179,6 +1293,10 @@ components:
           type:
             type: string
             enum: ["PLANT_STATE"]
+          sessionId:
+            type: string
+            format: uuid
+            description: ID da sessão que gerou este evento
           data:
             type: object
             description: "snapshot completo da planta"
@@ -1282,6 +1400,10 @@ components:
           type:
             type: string
             enum: ["CARS_STATE"]
+          sessionId:
+            type: string
+            format: uuid
+            description: ID da sessão que gerou este evento
           data:
             type: array
             items:
@@ -1354,6 +1476,10 @@ components:
           type:
             type: string
             enum: ["OEE_UPDATE"]
+          sessionId:
+            type: string
+            format: uuid
+            description: ID da sessão que gerou este evento
           data:
             type: array
             description: Lista de OEE por linha e agregações por shop
@@ -1406,6 +1532,10 @@ components:
           type:
             type: string
             enum: ["MTTR_MTBF_UPDATE"]
+          sessionId:
+            type: string
+            format: uuid
+            description: ID da sessão que gerou este evento
           data:
             type: array
             description: Lista de MTTR/MTBF por station, linha e shop
