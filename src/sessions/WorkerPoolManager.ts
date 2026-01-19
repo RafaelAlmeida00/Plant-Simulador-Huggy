@@ -165,28 +165,51 @@ export class WorkerPoolManager extends EventEmitter {
                 // Store worker
                 this.workers.set(sessionId, metadata);
 
-                // Wait for INIT_COMPLETE or timeout
-                const timeout = setTimeout(() => {
-                    if (this.workers.get(sessionId)?.status === 'initializing') {
-                        reject(new Error(`Worker initialization timeout for session ${sessionId}`));
-                        this.terminateWorker(sessionId);
-                    }
-                }, 30_000);
-
-                const initHandler = (event: WorkerEvent) => {
-                    if (event.type === 'INIT_COMPLETE' && event.sessionId === sessionId) {
-                        clearTimeout(timeout);
-                        metadata.status = 'ready';
-                        this.off('event', initHandler);
-                        resolve(sessionId);
-                    }
-                };
-
-                this.on('event', initHandler);
+                // Resolve immediately - worker is created but not initialized yet
+                // INIT_COMPLETE will be waited for separately after INIT command is sent
+                resolve(sessionId);
 
             } catch (error) {
                 reject(error);
             }
+        });
+    }
+
+    /**
+     * Wait for worker initialization to complete
+     * Call this AFTER sending the INIT command
+     */
+    public async waitForInit(sessionId: string, timeoutMs: number = 30_000): Promise<void> {
+        const metadata = this.workers.get(sessionId);
+        if (!metadata) {
+            throw new Error(`No worker found for session ${sessionId}`);
+        }
+
+        // If already ready, return immediately
+        if (metadata.status === 'ready') {
+            return;
+        }
+
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                this.off('event', initHandler);
+                reject(new Error(`Worker initialization timeout for session ${sessionId}`));
+            }, timeoutMs);
+
+            const initHandler = (event: WorkerEvent) => {
+                if (event.type === 'INIT_COMPLETE' && event.sessionId === sessionId) {
+                    clearTimeout(timeout);
+                    metadata.status = 'ready';
+                    this.off('event', initHandler);
+                    resolve();
+                } else if (event.type === 'ERROR' && event.sessionId === sessionId) {
+                    clearTimeout(timeout);
+                    this.off('event', initHandler);
+                    reject(new Error(event.data?.message || 'Worker initialization failed'));
+                }
+            };
+
+            this.on('event', initHandler);
         });
     }
 

@@ -1154,8 +1154,51 @@ if (this.workerPool.hasWorker(sessionId)) {
 
 ---
 
+### Worker Initialization Deadlock Fix (2026-01-18)
+
+**Issue: spawnWorker() waits for INIT_COMPLETE but INIT is sent after spawnWorker returns**
+
+This was a **DEADLOCK**:
+1. `spawnWorker()` creates worker and waits for `INIT_COMPLETE` (30s timeout)
+2. Worker only sends `INIT_COMPLETE` after receiving `INIT` command
+3. `INIT` command is sent in `startSession()` **AFTER** `spawnWorker()` returns
+4. Result: spawnWorker never returns, times out after 30 seconds
+
+```
+DEADLOCK:
+spawnWorker() → waits for INIT_COMPLETE (30s timeout)
+                         ↑
+                         └─── Never arrives because INIT not sent yet!
+
+INIT is only sent AFTER spawnWorker() returns ← never happens
+```
+
+**Solution:**
+
+1. `spawnWorker()` now returns immediately after creating the worker (doesn't wait for `INIT_COMPLETE`)
+2. Added new method `waitForInit(sessionId)` that waits for `INIT_COMPLETE`
+3. `startSession()` and `recoverSession()` call `waitForInit()` after sending `INIT` command
+
+**Files Modified:**
+
+| File | Changes |
+|------|---------|
+| `src/sessions/WorkerPoolManager.ts` | Removed INIT_COMPLETE wait from `spawnWorker()`, added `waitForInit()` method |
+| `src/sessions/SessionManager.ts` | Added `waitForInit()` call after INIT command in `startSession()` and `recoverSession()` |
+
+**Correct Flow After Fix:**
+```
+startSession()
+    ├── spawnWorker()        → creates worker, returns immediately
+    ├── sendCommand('INIT')  → sends INIT to worker
+    ├── waitForInit()        → waits for INIT_COMPLETE (30s timeout)
+    └── sendCommand('START') → starts simulation
+```
+
+---
+
 * If you are a IA or is a IA Claude Model by Anthropic, update this file always that you make a edit and get new informations about the project, change the architeture, logic and rules of the simulator. Read and do the command on file TIMELINE.md. Also, update the data change below:
 
-*Last updated: 2026-01-18 17:00:00*
+*Last updated: 2026-01-18 17:30:00*
 
 ---

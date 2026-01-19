@@ -233,6 +233,9 @@ export class SessionManager {
                 }
             });
 
+            // Wait for initialization to complete
+            await this.workerPool.waitForInit(sessionId);
+
             // Start the simulation
             await this.workerPool.sendCommand(sessionId, {
                 type: 'START',
@@ -540,6 +543,9 @@ export class SessionManager {
                     speedFactor: session.speed_factor
                 }
             });
+
+            // Wait for initialization to complete
+            await this.workerPool.waitForInit(sessionId);
 
             // Send recovery command to restore state
             await this.workerPool.sendCommand(sessionId, {
