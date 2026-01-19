@@ -1098,8 +1098,64 @@ Exit handler → gracefulShutdown=true → NO WORKER_CRASHED ✓
 
 ---
 
+### In-Memory Check + Stale Worker Cleanup (2026-01-18)
+
+**Issue: Previous fix incomplete - DB status check not sufficient**
+
+The idempotency check `session.status === 'running'` only catches sessions after spawn completes. During the ~30 second spawn/init phase, the DB status is still `idle`, so concurrent requests all pass and try to spawn workers.
+
+**Root Cause:**
+```
+Request A: DB check (idle) → passes → spawnWorker() → workers.Map.set() → waiting INIT_COMPLETE...
+                                                          ↓
+Request B: DB check (idle) → passes → spawnWorker() → workers.has() = true → ERROR "Worker already exists"
+```
+
+**Solution: Two-level idempotency check**
+
+1. **DB level**: `session.status === 'running'` catches completed starts
+2. **In-memory level**: `workerPool.hasWorker(sessionId)` catches in-progress starts
+
+**Files Modified:**
+
+| File | Changes |
+|------|---------|
+| `src/sessions/WorkerPoolManager.ts` | Added `getWorkerAge()` method |
+| `src/sessions/SessionManager.ts` | Added hasWorker check + stale worker cleanup in `startSession()` and `recoverSession()` |
+
+**Implementation:**
+```typescript
+// After DB status check
+if (this.workerPool.hasWorker(sessionId)) {
+    const workerStatus = this.workerPool.getWorkerStatus(sessionId);
+    const workerAge = this.workerPool.getWorkerAge(sessionId);
+
+    // Worker stuck in initializing for more than 10s = orphan
+    const isStaleWorker = workerStatus === 'initializing' && workerAge > 10_000;
+
+    if (isStaleWorker) {
+        logger().warn(`[SessionManager] Found stale worker (age: ${workerAge}ms), cleaning up`);
+        await this.workerPool.terminateWorker(sessionId);
+        // Continue to spawn new worker
+    } else {
+        throw new Error('Session start already in progress, please wait');
+    }
+}
+```
+
+**Behavior:**
+
+| Scenario | Behavior |
+|----------|----------|
+| Worker in `initializing` < 10s | "Session start already in progress, please wait" |
+| Worker in `initializing` > 10s | Auto-cleanup + spawn new worker |
+| Worker in `running/ready/paused` | "Session start already in progress, please wait" |
+| DB status = `running` | Return existing session (idempotent) |
+
+---
+
 * If you are a IA or is a IA Claude Model by Anthropic, update this file always that you make a edit and get new informations about the project, change the architeture, logic and rules of the simulator. Read and do the command on file TIMELINE.md. Also, update the data change below:
 
-*Last updated: 2026-01-18 16:30:00*
+*Last updated: 2026-01-18 17:00:00*
 
 ---

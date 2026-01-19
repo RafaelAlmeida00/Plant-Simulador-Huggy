@@ -274,6 +274,15 @@ export class WorkerPoolManager extends EventEmitter {
     }
 
     /**
+     * Get worker age in milliseconds
+     */
+    public getWorkerAge(sessionId: string): number {
+        const metadata = this.workers.get(sessionId);
+        if (!metadata) return 0;
+        return Date.now() - metadata.createdAt;
+    }
+
+    /**
      * Register event listener for worker events
      */
     public onEvent(handler: (event: WorkerEvent) => void): void {

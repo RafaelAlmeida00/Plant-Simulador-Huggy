@@ -179,6 +179,24 @@ export class SessionManager {
             return session;
         }
 
+        // Check if spawn is already in progress (in-memory check)
+        if (this.workerPool.hasWorker(sessionId)) {
+            const workerStatus = this.workerPool.getWorkerStatus(sessionId);
+            const workerAge = this.workerPool.getWorkerAge(sessionId);
+
+            // Worker stuck in initializing for more than 10s = orphan
+            const isStaleWorker = workerStatus === 'initializing' && workerAge > 10_000;
+
+            if (isStaleWorker) {
+                logger().warn(`[SessionManager] Found stale worker for session ${sessionId} (age: ${workerAge}ms), cleaning up`);
+                await this.workerPool.terminateWorker(sessionId);
+                // Continue to spawn new worker
+            } else {
+                logger().info(`[SessionManager] Session ${sessionId} start already in progress`);
+                throw new Error('Session start already in progress, please wait');
+            }
+        }
+
         if (session.status !== 'idle' && session.status !== 'stopped') {
             throw new Error(`Cannot start session in ${session.status} state`);
         }
@@ -462,6 +480,24 @@ export class SessionManager {
         if (session.status === 'running') {
             logger().info(`[SessionManager] Session ${sessionId} already recovered and running`);
             return session;
+        }
+
+        // Check if spawn is already in progress (in-memory check)
+        if (this.workerPool.hasWorker(sessionId)) {
+            const workerStatus = this.workerPool.getWorkerStatus(sessionId);
+            const workerAge = this.workerPool.getWorkerAge(sessionId);
+
+            // Worker stuck in initializing for more than 10s = orphan
+            const isStaleWorker = workerStatus === 'initializing' && workerAge > 10_000;
+
+            if (isStaleWorker) {
+                logger().warn(`[SessionManager] Found stale worker for session ${sessionId} (age: ${workerAge}ms), cleaning up`);
+                await this.workerPool.terminateWorker(sessionId);
+                // Continue to spawn new worker
+            } else {
+                logger().info(`[SessionManager] Session ${sessionId} recovery already in progress`);
+                throw new Error('Session recovery already in progress, please wait');
+            }
         }
 
         if (session.status !== 'interrupted') {
