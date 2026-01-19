@@ -173,6 +173,12 @@ export class SessionManager {
             throw new Error('Session not found or access denied');
         }
 
+        // IDEMPOTENCY: If already running, return existing session
+        if (session.status === 'running') {
+            logger().info(`[SessionManager] Session ${sessionId} already running, returning existing`);
+            return session;
+        }
+
         if (session.status !== 'idle' && session.status !== 'stopped') {
             throw new Error(`Cannot start session in ${session.status} state`);
         }
@@ -188,48 +194,70 @@ export class SessionManager {
             throw new Error(`Global active session limit reached (${this.limits.maxGlobalSessions})`);
         }
 
-        // Calculate expiration time
-        const startedAt = Date.now();
-        const expiresAt = startedAt + (session.duration_days * 24 * 60 * 60 * 1000);
+        // Track workerId for rollback
+        let workerId: string | undefined;
 
-        // Spawn worker
-        const workerId = await this.workerPool.spawnWorker(sessionId);
+        try {
+            // Calculate expiration time
+            const startedAt = Date.now();
+            const expiresAt = startedAt + (session.duration_days * 24 * 60 * 60 * 1000);
 
-        // Initialize the worker with session config
-        await this.workerPool.sendCommand(sessionId, {
-            type: 'INIT',
-            sessionId,
-            payload: {
-                configSnapshot: session.config_snapshot,
-                speedFactor: session.speed_factor
+            // Spawn worker
+            workerId = await this.workerPool.spawnWorker(sessionId);
+
+            // Initialize the worker with session config
+            await this.workerPool.sendCommand(sessionId, {
+                type: 'INIT',
+                sessionId,
+                payload: {
+                    configSnapshot: session.config_snapshot,
+                    speedFactor: session.speed_factor
+                }
+            });
+
+            // Start the simulation
+            await this.workerPool.sendCommand(sessionId, {
+                type: 'START',
+                sessionId
+            });
+
+            // Update database
+            const updatedSession = await this.sessionRepository.updateStatus(sessionId, 'running', {
+                started_at: startedAt,
+                expires_at: expiresAt
+            });
+
+            // Track in memory
+            this.activeSessions.set(sessionId, {
+                id: sessionId,
+                userId,
+                status: 'running',
+                workerId,
+                startedAt,
+                expiresAt
+            });
+
+            logger().info(`[SessionManager] Started session ${sessionId}, expires at ${new Date(expiresAt).toISOString()}`);
+
+            return updatedSession!;
+
+        } catch (error) {
+            // ROLLBACK: Clean up worker if spawn/init/start failed
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            logger().error(`[SessionManager] Failed to start session ${sessionId}, rolling back: ${errorMessage}`);
+
+            if (workerId) {
+                try {
+                    await this.workerPool.terminateWorker(sessionId);
+                    logger().info(`[SessionManager] Rolled back worker for session ${sessionId}`);
+                } catch (cleanupError) {
+                    const cleanupMsg = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+                    logger().error(`[SessionManager] Rollback cleanup failed: ${cleanupMsg}`);
+                }
             }
-        });
 
-        // Start the simulation
-        await this.workerPool.sendCommand(sessionId, {
-            type: 'START',
-            sessionId
-        });
-
-        // Update database
-        const updatedSession = await this.sessionRepository.updateStatus(sessionId, 'running', {
-            started_at: startedAt,
-            expires_at: expiresAt
-        });
-
-        // Track in memory
-        this.activeSessions.set(sessionId, {
-            id: sessionId,
-            userId,
-            status: 'running',
-            workerId,
-            startedAt,
-            expiresAt
-        });
-
-        logger().info(`[SessionManager] Started session ${sessionId}, expires at ${new Date(expiresAt).toISOString()}`);
-
-        return updatedSession!;
+            throw error;
+        }
     }
 
     /**
@@ -430,6 +458,12 @@ export class SessionManager {
             throw new Error('Session not found or access denied');
         }
 
+        // IDEMPOTENCY: If already running, return existing session
+        if (session.status === 'running') {
+            logger().info(`[SessionManager] Session ${sessionId} already recovered and running`);
+            return session;
+        }
+
         if (session.status !== 'interrupted') {
             throw new Error(`Cannot recover session in ${session.status} state`);
         }
@@ -454,50 +488,72 @@ export class SessionManager {
         // Prepare recovery payload
         const recoveryPayload = this.recoveryService.prepareRecoveryPayload(recoveryData);
 
-        // Spawn worker
-        const workerId = await this.workerPool.spawnWorker(sessionId);
+        // Track workerId for rollback
+        let workerId: string | undefined;
 
-        // Initialize the worker with session config
-        await this.workerPool.sendCommand(sessionId, {
-            type: 'INIT',
-            sessionId,
-            payload: {
-                configSnapshot: session.config_snapshot,
-                speedFactor: session.speed_factor
+        try {
+            // Spawn worker
+            workerId = await this.workerPool.spawnWorker(sessionId);
+
+            // Initialize the worker with session config
+            await this.workerPool.sendCommand(sessionId, {
+                type: 'INIT',
+                sessionId,
+                payload: {
+                    configSnapshot: session.config_snapshot,
+                    speedFactor: session.speed_factor
+                }
+            });
+
+            // Send recovery command to restore state
+            await this.workerPool.sendCommand(sessionId, {
+                type: 'RECOVER',
+                sessionId,
+                payload: recoveryPayload
+            });
+
+            // Start the simulation
+            await this.workerPool.sendCommand(sessionId, {
+                type: 'START',
+                sessionId
+            });
+
+            // Update database - mark as running, clear interrupted_at
+            const updatedSession = await this.sessionRepository.updateStatus(sessionId, 'running', {
+                interrupted_at: undefined
+            });
+
+            // Track in memory
+            this.activeSessions.set(sessionId, {
+                id: sessionId,
+                userId,
+                status: 'running',
+                workerId,
+                startedAt: session.started_at,
+                expiresAt: session.expires_at
+            });
+
+            logger().info(`[SessionManager] Recovered session ${sessionId} from interrupted state`);
+
+            return updatedSession!;
+
+        } catch (error) {
+            // ROLLBACK: Clean up worker if spawn/init/recover/start failed
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            logger().error(`[SessionManager] Failed to recover session ${sessionId}, rolling back: ${errorMessage}`);
+
+            if (workerId) {
+                try {
+                    await this.workerPool.terminateWorker(sessionId);
+                    logger().info(`[SessionManager] Rolled back worker for session ${sessionId}`);
+                } catch (cleanupError) {
+                    const cleanupMsg = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+                    logger().error(`[SessionManager] Rollback cleanup failed: ${cleanupMsg}`);
+                }
             }
-        });
 
-        // Send recovery command to restore state
-        await this.workerPool.sendCommand(sessionId, {
-            type: 'RECOVER',
-            sessionId,
-            payload: recoveryPayload
-        });
-
-        // Start the simulation
-        await this.workerPool.sendCommand(sessionId, {
-            type: 'START',
-            sessionId
-        });
-
-        // Update database - mark as running, clear interrupted_at
-        const updatedSession = await this.sessionRepository.updateStatus(sessionId, 'running', {
-            interrupted_at: undefined
-        });
-
-        // Track in memory
-        this.activeSessions.set(sessionId, {
-            id: sessionId,
-            userId,
-            status: 'running',
-            workerId,
-            startedAt: session.started_at,
-            expiresAt: session.expires_at
-        });
-
-        logger().info(`[SessionManager] Recovered session ${sessionId} from interrupted state`);
-
-        return updatedSession!;
+            throw error;
+        }
     }
 
     /**

@@ -49,6 +49,7 @@ interface WorkerMetadata {
     createdAt: number;
     lastHeartbeat: number;
     status: 'initializing' | 'ready' | 'running' | 'paused' | 'stopping' | 'stopped';
+    gracefulShutdown: boolean; // Marks intentional shutdown to prevent false crash detection
 }
 
 /**
@@ -116,7 +117,8 @@ export class WorkerPoolManager extends EventEmitter {
                     sessionId,
                     createdAt: Date.now(),
                     lastHeartbeat: Date.now(),
-                    status: 'initializing'
+                    status: 'initializing',
+                    gracefulShutdown: false
                 };
 
                 // Setup message handler
@@ -139,11 +141,18 @@ export class WorkerPoolManager extends EventEmitter {
                 worker.on('exit', (code) => {
                     logger().info(`[WorkerPool] Worker for session ${sessionId} exited with code ${code}`);
 
-                    const wasActive = this.workers.has(sessionId);
+                    // Get metadata BEFORE deleting to check gracefulShutdown flag
+                    const metadata = this.workers.get(sessionId);
+                    const wasGracefulShutdown = metadata?.gracefulShutdown === true;
+                    const wasActive = metadata !== undefined;
+
+                    // Clean up
                     this.workers.delete(sessionId);
 
-                    // If the worker exited unexpectedly (not via terminateWorker), emit crash event
-                    if (wasActive && code !== 0) {
+                    // Only emit crash if:
+                    // 1. Worker was active (not already cleaned up)
+                    // 2. NOT a graceful shutdown (flag was not set)
+                    if (wasActive && !wasGracefulShutdown) {
                         this.emit('event', {
                             type: 'WORKER_CRASHED',
                             sessionId,
@@ -206,7 +215,13 @@ export class WorkerPoolManager extends EventEmitter {
 
         logger().info(`[WorkerPool] Terminating worker for session ${sessionId}`);
 
+        // CRITICAL: Set graceful shutdown flag BEFORE sending STOP
+        // This prevents the exit handler from emitting WORKER_CRASHED
         metadata.status = 'stopping';
+        metadata.gracefulShutdown = true;
+
+        // Delete from Map BEFORE terminate to avoid race condition with exit handler
+        this.workers.delete(sessionId);
 
         // Give the worker a chance to clean up
         try {
@@ -218,7 +233,6 @@ export class WorkerPoolManager extends EventEmitter {
 
         // Force terminate
         await metadata.worker.terminate();
-        this.workers.delete(sessionId);
 
         logger().info(`[WorkerPool] Worker terminated for session ${sessionId}`);
     }

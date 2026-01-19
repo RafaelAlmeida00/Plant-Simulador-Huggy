@@ -20,6 +20,7 @@ export class Server {
 
     constructor() {
         this.app = express();
+        this.app.set('trust proxy', 1);
         this.httpServer = createServer(this.app);
         this.port = process.env.PORT || 3001;
         this.initializeMiddlewares();

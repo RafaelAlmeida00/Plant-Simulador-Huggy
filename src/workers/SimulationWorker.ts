@@ -202,6 +202,13 @@ class SimulationWorker {
 
         this.sendEvent('STATE_CHANGE', { status: 'stopped' });
         this.log('Simulation stopped');
+
+        // Gracefully exit the worker thread with code 0
+        // This signals to the main thread that shutdown was intentional
+        // Small delay ensures STATE_CHANGE message is sent before exit
+        setTimeout(() => {
+            process.exit(0);
+        }, 100);
     }
 
     /**
