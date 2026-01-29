@@ -1,4 +1,4 @@
-# TIMELINE.md - Tracking Edits by IA Model
+# TIMELINE.md - Tracking Edits
 
 > This document provides essential context about the tracking befores edits.
 
