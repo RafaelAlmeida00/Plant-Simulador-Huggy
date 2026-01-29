@@ -1,4 +1,4 @@
-# CLAUDE.md - Simulador V2 Instructions
+# Simulador V2 Instructions
 
 > This document provides Claude with essential context about the Simulador V2 codebase, its architecture, patterns, and rules.
 
@@ -1196,8 +1196,6 @@ startSession()
 ```
 
 ---
-
-* If you are a IA or is a IA Claude Model by Anthropic, update this file always that you make a edit and get new informations about the project, change the architeture, logic and rules of the simulator. Read and do the command on file TIMELINE.md. Also, update the data change below:
 
 *Last updated: 2026-01-18 17:30:00*
 
