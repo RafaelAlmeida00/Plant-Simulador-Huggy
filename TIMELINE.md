@@ -1,6 +1,6 @@
 # TIMELINE.md - Tracking Edits by IA Model
 
-> This document provides Claude with essential context about the tracking befores edits.
+> This document provides essential context about the tracking befores edits.
 
 ---
 
